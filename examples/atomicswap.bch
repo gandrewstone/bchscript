@@ -1,0 +1,20 @@
+
+
+def atomicSwap(addrA, addrB, hashOfSecret, timeout, @which, @sigA, @pubkeyA, @sigB, @pubkeyB, @secret)
+{
+    if (@which)
+    {
+        OP_CHECKSIGVERIFY(addrB, @sigB, @pubkeyB)
+        OP_HASH160(@secret)
+        hashOfSecret
+        OP_EQUAL
+    }
+    else
+    {
+        OP_CHECKSIGVERIFY(addrA, @sigA,@pubkeyA)
+        OP_CHECKLOCKTIMEVERIFY(timeout)        
+    }
+}
+
+
+scriptify!("main", atomicSwap("bitcoincash:addrA","bitcoincash:addrB", hash160!("Staple this battery to the correct horse"), "epochTime+(24*60*60)"))

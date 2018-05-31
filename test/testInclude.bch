@@ -1,0 +1,3 @@
+include "test/stdscripts.bch"
+
+scriptify!("main",p2pkh("bitcoincash:any address here"))

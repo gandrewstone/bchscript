@@ -1,0 +1,11 @@
+def pushData(a,b,c,d,e)
+{
+    a
+    b
+    c
+    d
+    e
+}
+
+
+scriptify!("main", pushData(hash160!(1),hash256!(1),sha256!(1),blake2b256!(1),blake2b160!(1)))

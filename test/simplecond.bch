@@ -1,0 +1,13 @@
+include "test/stdscripts.bch"
+
+def aOrb(addrA, addrB, @siga, @pubkeya, @sigb, @pubkeyb, @which)
+{
+  @which
+  OP_IF
+    p2pkh(addrA, @siga, @pubkeya)
+  OP_ELSE
+    p2pkh(addrB, @sigb, @pubkeyb)
+  OP_ENDIF
+}
+
+scriptify!("main", aOrb("bitcoincash:addrA","bitcoincash:addrB"))
