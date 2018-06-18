@@ -154,6 +154,15 @@ class Binding:
             self.invocation = params
             return (n, copy.copy(self))
 
+class SpendScriptItem:
+    def __init__(self, name, val):
+        self.name = name
+        self.val = val.strip("'").strip('"')
+
+    def serialize(self):
+        pdb.set_trace()
+
+    
 
 class Param:
     """
@@ -164,7 +173,7 @@ class Param:
 
     def compile(self, symbols=None):
         if self.name[0] == "@":  # This is an implicitly pushed stack parameter
-            return [symbols.get(self.name, self.name)]  # return the binding if it exists or the param name
+            return [SpendScriptItem(self.name, symbols.get(self.name, None))]  # return the binding if it exists or the param name
         binding = symbols.get(self.name)
         if binding is None:
             assert not "parameter %s is not bound" % self.name

@@ -1,10 +1,39 @@
 import pdb
 import hashlib
 import copy
+import binascii
 
 from bchscript.bchutil import *
 from bchscript.bchprimitives import Primitive
 
+def ScriptifyData(tmp):
+    if type(tmp) is list:
+        ret = []
+        for t in tmp:
+            ret.append(ScriptifyData(t))
+        return b"".join(ret)
+
+    if 1:    
+        ret = []
+        if type(tmp) is str:
+            tmp = bytes(tmp,"utf-8")
+        l = len(tmp)
+        if l == 0:  # push empty value onto the stack
+            ret.append(bytes([0]))
+        elif l <= 0x4b:
+            ret.append(bytes([l]))  # 1-75 bytes push # of bytes as the opcode
+            ret.append(tmp)
+        elif l < 256:
+            ret.append(bytes([bchopcodes.opcode2bin["OP_PUSHDATA1"]]))
+            ret.append(bytes([l]))
+            ret.append(tmp)
+        elif l < 65536:
+            ret.append(bytes([bchopcodes.opcode2bin["OP_PUSHDATA2"]]))
+            ret.append(bytes([l & 255, l >> 8]))  # little endian
+            ret.append(tmp)
+        else:  # bigger values won't fit on the stack anyway
+            assert 0, "cannot push %d bytes" % l
+        return b"".join(ret)
 
 def evalParamsList(params, symbols):
     ret = []
@@ -42,6 +71,23 @@ class Immediate(Primitive):
     def eval(self, args):
         return self.evalFn(*args)
 
+class HexNumber:
+    def __init__(self):
+        Primitive.__init__(self, "HexNumber", None)
+
+    def parse(self, tokens, n, symbols=None):
+        obj = HexNumber()
+        obj.name = tokens[n]  # the next token is the actual string address
+        return (n + 1, obj)
+
+    def compile(self, symbols):
+        return [self]
+
+    def serialize(self):
+        return binascii.unhexlify(self.name)
+
+    def scriptify(self):
+        return ScriptifyData(self.serialize())
 
 class P2shHashOf:
     def __init__(self):
@@ -52,7 +98,7 @@ class P2shHashOf:
         """
         default doesn't accept any other tokens
         """
-        global bchStatements
+        pdb.set_trace()
         if tokens[n] == "(":
             (n, self.statements) = statementConsumer(tokens, n + 1, symbols)
         assert tokens[n] == ")"
@@ -79,25 +125,9 @@ class BchAddress:
         return [self]
 
     def scriptify(self):
-        ret = []
         tmp = self.serialize()
-        l = len(tmp)
-        if l == 0:  # push empty value onto the stack
-            ret.append(bytes([0]))
-        elif l <= 0x4b:
-            ret.append(bytes([l]))  # 1-75 bytes push # of bytes as the opcode
-            ret.append(tmp)
-        elif l < 256:
-            ret.append(bytes([bchopcodes.opcode2bin["OP_PUSHDATA1"]]))
-            ret.append(bytes([l]))
-            ret.append(tmp)
-        elif l < 65536:
-            ret.append(bytes([bchopcodes.opcode2bin["OP_PUSHDATA2"]]))
-            ret.append(bytes([l & 255, l >> 8]))  # little endian
-            ret.append(tmp)
-        else:  # bigger values won't fit on the stack anyway
-            assert 0, "cannot push %d bytes" % l
-        return b"".join(ret)
+        return ScriptifyData(tmp)
+    
 
     def serialize(self):
         tmp = bitcoinAddress2bin(self.name)
@@ -113,5 +143,6 @@ immediates = {
     "p2shHash!": P2shHashOf(),
     BCH_TESTNET: BchAddress(BCH_TESTNET),
     BCH_MAINNET: BchAddress(BCH_MAINNET),
-    BCH_REGTEST: BchAddress(BCH_REGTEST)
+    BCH_REGTEST: BchAddress(BCH_REGTEST),
+    "0x": HexNumber()
 }

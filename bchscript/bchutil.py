@@ -54,6 +54,9 @@ def listify(obj):
 
 def script2bin(opcodes):
     """Convert a program to a binary string"""
+    if not type(opcodes) is list:
+        opcodes = [opcodes]
+
     ret = []
     for opcode in opcodes:
         if type(opcode) is str:

@@ -3,14 +3,14 @@ import pdb
 import re
 from bchscript.bchutil import *
 from bchscript.bchprimitives import *
-from bchscript.bchimmediates import immediates, BchAddress
+from bchscript.bchimmediates import immediates, BchAddress, HexNumber
 
 
 class ParserError(Exception):
     pass
 
 
-multiTokens = ["->", "...", "bchtest:", "bitcoincash:", "bchreg:"]
+multiTokens = ["0x", "->", "...", "bchtest:", "bitcoincash:", "bchreg:"]
 unitaryTokens = """,./?~`#$%^&*()-+=\|}{[]'";:"""
 
 bchStatements = primitives
@@ -90,6 +90,12 @@ class Scriptify:
                 ret.append(item)
                 n += 1
                 continue
+            elif type(item) is SpendScriptItem:
+                if not item.val is None:
+                    ret.append(item.val)
+                else:
+                    ret.append(item.name)
+                n += 1
             elif type(item) is str and item == "OP_IF":
                 (els, endif) = condSection(n, pgm)
                 ret.append([self.solve(pgm, n + 1, els - 1), self.solve(pgm, els + 1, endif - 1)])
@@ -98,6 +104,13 @@ class Scriptify:
                 n += 1
         return ret
 
+def RemoveSpendParams(script):
+    ret = []
+    for s in script:
+        if not type(s) is SpendScriptItem:
+            ret.append(s)
+    return ret
+    
 
 class P2shify(Scriptify):
     def __init__(self):
@@ -106,11 +119,14 @@ class P2shify(Scriptify):
         self.statements = None
 
     def compile(self, symbols):
-        pred = compileStatementList(self.statements, symbols)
-        spend = self.solve(pred)
-        scriptHash = hash160(script2bin(pred))
-        p2sh = [primitives["OP_HASH160"], scriptHash, primitives["OP_EQUAL"], script2bin(pred)]
-        return (self.name, {"script": p2sh, "spend": spend, "predicate": pred})
+        redeem = compileStatementList(self.statements, symbols)
+        redeemCleaned = RemoveSpendParams(redeem)
+        redeemBin = script2bin(redeemCleaned)
+        spend = self.solve(redeem)
+        spend.append(redeemBin)
+        scriptHash = hash160(redeemBin)
+        p2sh = [primitives["OP_HASH160"], scriptHash, primitives["OP_EQUAL"]]
+        return (self.name, {"script": p2sh, "spend": spend, "redeem": redeemCleaned})
 
 
 class Define:
@@ -184,7 +200,7 @@ topScope = {"def": Define(), "scriptify!": Scriptify(), "p2shify!": P2shify(), "
 def topParser(tokens, n):
     stmts = []
     while tokens[n] in topScope:
-        print(tokens[n])
+#        print(tokens[n])
         (n, obj) = topScope[tokens[n]].parse(tokens, n + 1)
         stmts.append(obj)
         if n >= len(tokens):  # all done
@@ -276,17 +292,22 @@ def prettyPrint(opcodes):
     for opcode in opcodes:
         if type(opcode) is str and opcode[0] == "@":
             continue
+        if type(opcode) is str:
+            opcode = '"' + opcode + '"'
         if type(opcode) is Primitive:
             opcode = opcode.name
         if type(opcode) is BchAddress:
             opcode = opcode.name
+        if type(opcode) is HexNumber:
+            opcode = opcode.name
 
         if opcode in ["OP_ELSE", "OP_ENDIF"]:
             indent -= 4
+            
         if type(opcode) is bytes:
             ret.append(" " * indent + ToHex(opcode))
         else:
-            ret.append(" " * indent + str(opcode).strip('"').strip("'"))
+            ret.append(" " * indent + str(opcode))
         if opcode in ["OP_IF", "OP_ELSE"]:
             indent += 4
     return "\n".join(ret)
