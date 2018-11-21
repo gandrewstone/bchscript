@@ -57,10 +57,10 @@ def main(argv):
             try:
                 t = result[params.display]["script"]
             except KeyError:
-                sys.stderr.write("Include a 'main' scriptify! command\n")
+                sys.stderr.write("Error: script must include a '%s' scriptify! command\n" % params.display)
                 return
             if params.hex:
-                out.append(ToHex(script2bin(t)))
+                out.append(ToHex(applyTemplate(script2bin(t))))
             if params.opcode:
                 out.append(prettyPrint(t))
 

@@ -13,6 +13,49 @@ BCH_REGTEST = "bchreg:"
 BCH_ANYNET = None
 
 
+def ScriptifyData(tmp):
+    if type(tmp) is list:
+        ret = []
+        for t in tmp:
+            ret.append(ScriptifyData(t))
+        return b"".join(ret)
+
+    if 1:    
+        ret = []
+        if type(tmp) is str:
+            tmp = bytes(tmp,"utf-8")
+        l = len(tmp)
+        if l == 0:  # push empty value onto the stack
+            ret.append(bytes([0]))
+        elif l <= 0x4b:
+            ret.append(bytes([l]))  # 1-75 bytes push # of bytes as the opcode
+            ret.append(tmp)
+        elif l < 256:
+            ret.append(bytes([bchopcodes.opcode2bin["OP_PUSHDATA1"]]))
+            ret.append(bytes([l]))
+            ret.append(tmp)
+        elif l < 65536:
+            ret.append(bytes([bchopcodes.opcode2bin["OP_PUSHDATA2"]]))
+            ret.append(bytes([l & 255, l >> 8]))  # little endian
+            ret.append(tmp)
+        else:  # bigger values won't fit on the stack anyway
+            assert 0, "cannot push %d bytes" % l
+        return b"".join(ret)
+
+def ScriptifyNumber(num):
+    if num == 0:
+        return bytes([0])
+    elif num < 17:
+        return bytes([num+0x80])
+    elif num < 256:
+        return ScriptifyData(bytes([num]))
+    elif num < 65536:
+        return ScriptifyData(num.to_bytes(2, byteorder="little"))
+    elif num < (1<<32):
+        return ScriptifyData(num.to_bytes(4, byteorder="little"))
+    else:
+        return ScriptifyData(num.to_bytes(8, byteorder="little"))
+
 def sha256(msg):
     """Return the sha256 hash of the passed data.  Non binary data is automatically converted
 
@@ -52,6 +95,37 @@ def listify(obj):
     return [obj]
 
 
+def templatedJoin(listOfData):
+    ret = [b""]
+    # join binary strings, preserve other types as separate items
+    for l in listOfData:
+        if type(l) is bytes and type(ret[-1]) is bytes:
+            ret[-1] = ret[-1] + l
+        else:
+            ret.append(l)
+
+    # strip off the list if there is not template
+    if len(ret) == 1 and type(ret[0]) is bytes:
+        ret = ret[0]
+    return ret
+
+def applyTemplate(template, **kwargs):
+    if type(template) is bytes:  # its already raw bytes, nothing to do
+        return template
+    applied = []
+    for t in template:
+        if type(t) is str:
+            if t[0] is '$':
+                applied.append(kwargs[t[1:]])
+            elif t[0] is '@':
+                pass # skip all the solution pushes
+            else:
+                raise "bad template"
+        else:
+            applied.append(t)
+    return b"".join(applied)
+
+
 def script2bin(opcodes):
     """Convert a program to a binary string"""
     if not type(opcodes) is list:
@@ -69,26 +143,13 @@ def script2bin(opcodes):
             ret.append(opcode.scriptify())
         elif hasattr(opcode, "serialize"):
             ret.append(opcode.serialize())
+        elif type(opcode) is int:
+            ret.append(ScriptifyNumber(opcode))
         elif type(opcode) is bytes:  # encode the command to push data onto stack, then the data
-            l = len(opcode)
-            if l == 0:  # push empty value onto the stack
-                ret.append(bytes([0]))
-            elif l <= 0x4b:
-                ret.append(bytes([l]))  # 1-75 bytes push # of bytes as the opcode
-                ret.append(opcode)
-            elif l < 256:
-                ret.append(bytes([bchopcodes.opcode2bin["OP_PUSHDATA1"]]))
-                ret.append(bytes([l]))
-                ret.append(opcode)
-            elif l < 65536:
-                ret.append(bytes([bchopcodes.opcode2bin["OP_PUSHDATA2"]]))
-                ret.append(bytes([l & 255, l >> 8]))  # little endian
-                ret.append(opcode)
-            else:  # bigger values won't fit on the stack anyway
-                assert 0, "cannot push %d bytes" % l
+            ret.append(ScriptifyData(opcode))
         else:
             assert 0, "Not fully compiled: %s" % opcode
-    return b"".join(ret)
+    return templatedJoin(ret)
 
 
 def script2hex(opcodes):

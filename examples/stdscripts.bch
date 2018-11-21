@@ -25,3 +25,15 @@ def multisig(m, ofN, hashes..., @sigs...)
   OP_CHECKMULTISIG
   }
  
+
+def multisig2(Apub, Bpub, @Asig, @Bsig)
+{
+    @Asig
+    @Bsig
+    2
+    Apub
+    Bpub
+    2
+    OP_CHECKMULTISIG  
+}
+

@@ -6,35 +6,6 @@ import binascii
 from bchscript.bchutil import *
 from bchscript.bchprimitives import Primitive
 
-def ScriptifyData(tmp):
-    if type(tmp) is list:
-        ret = []
-        for t in tmp:
-            ret.append(ScriptifyData(t))
-        return b"".join(ret)
-
-    if 1:    
-        ret = []
-        if type(tmp) is str:
-            tmp = bytes(tmp,"utf-8")
-        l = len(tmp)
-        if l == 0:  # push empty value onto the stack
-            ret.append(bytes([0]))
-        elif l <= 0x4b:
-            ret.append(bytes([l]))  # 1-75 bytes push # of bytes as the opcode
-            ret.append(tmp)
-        elif l < 256:
-            ret.append(bytes([bchopcodes.opcode2bin["OP_PUSHDATA1"]]))
-            ret.append(bytes([l]))
-            ret.append(tmp)
-        elif l < 65536:
-            ret.append(bytes([bchopcodes.opcode2bin["OP_PUSHDATA2"]]))
-            ret.append(bytes([l & 255, l >> 8]))  # little endian
-            ret.append(tmp)
-        else:  # bigger values won't fit on the stack anyway
-            assert 0, "cannot push %d bytes" % l
-        return b"".join(ret)
-
 def evalParamsList(params, symbols):
     ret = []
     if params is None:

@@ -1,6 +1,17 @@
 #!/bin/python3
 import pdb
 import re
+import sys
+import traceback
+
+def excepthook(type, value, tb):
+    print(type.__name__ + ": " + str(value))
+    traceback.print_exception(type, value, tb)
+    pdb.pm()
+    print("exception")
+
+sys.excepthook = excepthook
+
 from bchscript.bchutil import *
 from bchscript.bchprimitives import *
 from bchscript.bchimmediates import immediates, BchAddress, HexNumber
@@ -43,6 +54,8 @@ def statementConsumer(tokens, n, localSymbols):
                     localSymbols.update(obj.outputs)
                 stmts.append(obj)
             else:
+                if tokens[n] != "}":  # expected closer so not a problem
+                    print("%s is not a statement" % tokens[n])
                 break
 
     return (n, stmts)
@@ -56,6 +69,7 @@ class Scriptify:
         self.name = "scriptify!"
         self.statements = None
         self.args = []
+        self.outputs = None
 
     def parse(self, tokens, n, symbols=None):
         """
@@ -70,7 +84,10 @@ class Scriptify:
         (n, self.args) = argsConsumer(tokens, n, syms)
 
         dup = copy.copy(self)
-        dup.name = self.args[0].strip("'").strip('"')
+        try:
+            dup.name = self.args[0].strip("'").strip('"')
+        except AttributeError:
+            raise ParserError("First parameter of scriptify! must be a string")
         dup.statements = listify(self.args[1])
         return (n, dup)
 
@@ -117,6 +134,7 @@ class P2shify(Scriptify):
         Scriptify.__init__(self)
         self.name = "p2shify!"
         self.statements = None
+        self.outputs = None
 
     def compile(self, symbols):
         redeem = compileStatementList(self.statements, symbols)
@@ -124,10 +142,18 @@ class P2shify(Scriptify):
         redeemBin = script2bin(redeemCleaned)
         spend = self.solve(redeem)
         spend.append(redeemBin)
-        scriptHash = hash160(redeemBin)
+        if type(redeemBin) is list:  # Its template so I can't simplify further
+            scriptHash = "hash160(%s)" % str(redeemBin)
+        else:
+            scriptHash = hash160(redeemBin)
         p2sh = [primitives["OP_HASH160"], scriptHash, primitives["OP_EQUAL"]]
         return (self.name, {"script": p2sh, "spend": spend, "redeem": redeemCleaned})
 
+def reportBadStatement(tokens, n, symbols):
+    print("ERROR: Bad statement or undefined symbol: %s" % tokens[n])
+    print("    Known symbols: %s" % list(filter(lambda x: type(x) is str, symbols.keys())))
+    print("    Context: %s" % tokens[n-10:n+10])
+    # pdb.set_trace()
 
 class Define:
     def __init__(self):
@@ -167,7 +193,9 @@ class Define:
         assert tokens[n] == "{"
         n += 1
         (n, self.statements) = statementConsumer(tokens, n, self.args)
-        assert tokens[n] == "}"
+        if tokens[n] != "}":
+            reportBadStatement(tokens, n, self.args)
+            assert tokens[n] == "}"
         tmp = Binding(self.define)
         cpy = copy.copy(self)
         tmp.instanceOf = cpy
@@ -196,6 +224,7 @@ class Include:
 
 topScope = {"def": Define(), "scriptify!": Scriptify(), "p2shify!": P2shify(), "include": Include()}
 
+bchStatements.update({"scriptify!": Scriptify(), "p2shify!": P2shify()})
 
 def topParser(tokens, n):
     stmts = []
@@ -258,6 +287,7 @@ def bchCompile(program):
         temp = p.compile(None)
         commands.append(temp)
 
+    # pdb.set_trace()
     ret = {}
     for c in commands:
         if type(c) is tuple:
@@ -293,7 +323,10 @@ def prettyPrint(opcodes):
         if type(opcode) is str and opcode[0] == "@":
             continue
         if type(opcode) is str:
-            opcode = '"' + opcode + '"'
+            if opcode[0] == '"' or opcode[0] == "'":
+                pass
+            else:
+                opcode = '"' + opcode + '"'
         if type(opcode) is Primitive:
             opcode = opcode.name
         if type(opcode) is BchAddress:

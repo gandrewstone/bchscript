@@ -1,0 +1,10 @@
+def secretLock(secrethash, @secret)
+  {
+  @secret
+  OP_HASH160
+  secrethash
+  OP_EQUAL
+  }
+
+p2shify!("main", secretLock(0xd5ce04b05d790eab44c80399b2c27a97754ef260, "c667c14e218cf530c405e2d50def250b0c031f69593e95171048c772ad0e1bce"))
+

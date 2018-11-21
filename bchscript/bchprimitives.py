@@ -4,6 +4,15 @@ import bchscript.bchopcodes as bchopcodes
 
 statementConsumerCallout = None
 
+class TemplateParam():
+    def __init__(self, name):
+        self.name = name
+    def compile(self, symbols=None):
+        """Compile into a list of statements, given an input substitution (symbol) table"""
+        return [self]  # Template params pass thru compilation
+
+    def scriptify(self):
+        return "$" + self.name
 
 def SetStatementConsumerCallout(t):
     global statementConsumerCallout
@@ -72,6 +81,9 @@ def argsConsumer(tokens, n, validSymbols):
         if isInt(tokens[n]):
             arg.append(int(tokens[n]))
             n += 1
+        elif tokens[n][0] == '$':
+            arg.append(TemplateParam(tokens[n+1]))
+            n += 2
         elif tokens[n][0] == '"':  # Push data onto the stack
             arg.append(tokens[n])
             n += 1
@@ -81,7 +93,7 @@ def argsConsumer(tokens, n, validSymbols):
         else:
             if tokens[n] == ")":
                 continue
-            pdb.set_trace()
+            # pdb.set_trace()
             raise Exception("invalid symbol: %s" % tokens[n])
         if tokens[n] == ",":
             if len(arg) > 1:
@@ -157,12 +169,24 @@ class Binding:
 class SpendScriptItem:
     def __init__(self, name, val):
         self.name = name
-        self.val = val.strip("'").strip('"')
+        if type(val) is str:
+            self.val = val.strip("'").strip('"')
+        else:
+            self.val = val
 
     def serialize(self):
-        pdb.set_trace()
+        if not self.val is None:
+            if type(self.val) is str:
+                return bytes(self.val)
+            else:
+                return self.val
+        else:
+            # TODO why return template param?
+            return TemplateParam(self.name)
 
-    
+    def scriptify(self):
+        return "@" + self.name
+
 
 class Param:
     """
@@ -242,7 +266,45 @@ class Primitive:
             dup = copy.copy(self)
             return (n, dup)
 
+class RepeatConstruct:
+    """Implement the repeat (n) {} construct"""
 
+    def __init__(self):
+        self.name = "repeat"
+        self.statements = None
+        self.arg = None
+        self.outputs = None
+
+    def parse(self, tokens, n, symbols=None):
+        if tokens[n] == "(":  # optional if param
+            (n, self.arg) = argsConsumer(tokens, n, symbols)
+        if tokens[n] == "{":
+            (n, self.statements) = statementConsumerCallout(tokens, n + 1, symbols)
+        else:
+            assert 0, "need block"
+        assert tokens[n] == "}"
+        return (n + 1, copy.copy(self))
+
+    def compile(self, symbols):
+        ret = []
+        if not self.arg is None:
+            assert len(self.arg) == 1, "if statement can only have one argument"
+
+        repeatCount = int(self.arg[0])
+        if not self.statements is None:
+            stmts = compileStatementList(self.statements, symbols)
+            for i in range(repeatCount):
+                ret.extend(stmts)
+        return ret
+
+    def str(self):
+        return self.name
+
+    def serialize(self):
+        assert(0)  # should never call this because compile causes this to disappear
+
+
+        
 class IfConstruct:
     """Implement the if () {} construct"""
 
@@ -267,11 +329,18 @@ class IfConstruct:
         if not self.arg is None:
             assert len(self.arg) == 1, "if statement can only have one argument"
             ret.extend(compileParamsList(self.arg, symbols))
-        ret.append("OP_IF")
+
+        ret.append(self)
         if not self.statements is None:
             ret.extend(compileStatementList(self.statements, symbols))
         # TODO what if no else follows?
         return ret
+
+    def str(self):
+        return self.name
+
+    def serialize(self):
+        return bytes([bchopcodes.opcode2bin[self.name]])
 
 
 class ElseConstruct:
@@ -296,13 +365,18 @@ class ElseConstruct:
     def compile(self, symbols):
         ret = []
         if not self.arg is None:
-            assert len(self.arg) == 1, "if statement can only have one argument"
-            ret.extend(compileParamsList(self.arg, symbols))
-        ret.append("OP_ELSE")
+            assert len(self.arg) == 0, "else statement cannot have arguments"
+        ret.append(self)
         if not self.statements is None:
             ret.extend(compileStatementList(self.statements, symbols))
-        ret.append("OP_ENDIF")
+        ret.append(primitives["OP_ENDIF"])
         return ret
+
+    def str(self):
+        return self.name
+
+    def serialize(self):
+        return bytes([bchopcodes.opcode2bin[self.name]])
 
 
 def elseParser(prim, tokens, n, symbols):
@@ -329,7 +403,7 @@ def repeatParser(prim, tokens, n, symbols):
 
 SP_IF = IfConstruct()
 SP_ELSE = ElseConstruct()  # Primitive("else", None, elseParser)
-SP_REPEAT = Primitive("repeat", None, repeatParser)
+SP_REPEAT = RepeatConstruct()
 
 SP_EXEC = Primitive("exec", None)
 
