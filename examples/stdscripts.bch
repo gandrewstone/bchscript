@@ -19,6 +19,8 @@ def p2sh(scriptHash, @script)
 
 def multisig(m, ofN, hashes..., @sigs...)
   {
+  OP_FALSE
+  @sigs
   m
   hashes
   ofN
@@ -28,12 +30,13 @@ def multisig(m, ofN, hashes..., @sigs...)
 
 def multisig2(Apub, Bpub, @Asig, @Bsig)
 {
+    OP_FALSE  // Dummy element
     @Asig
     @Bsig
-    2
+    2  // signature count
     Apub
     Bpub
-    2
+    2  // public key count
     OP_CHECKMULTISIG  
 }
 

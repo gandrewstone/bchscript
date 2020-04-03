@@ -1,3 +1,9 @@
+// Protocol:
+// Alice creates a preimage secret where hashOfSecret = HASH160(secret).  Sends hashOfSecret to Bob.
+// Alice creates tx with AtomicSwap() constraint with a timeout.  Confirms on blockchain.
+// Bob creates tx with atomicSwap() constraint with timeout.  Confirms on blockchain.
+// Alice spends Bob's transaction, revealing "secret".
+// Bob spends Alice's transaction now that he knows "secret".
 
 
 def atomicSwap(addrA, addrB, hashOfSecret, timeout, @which, @sigA, @pubkeyA, @sigB, @pubkeyB, @secret)
@@ -9,10 +15,10 @@ def atomicSwap(addrA, addrB, hashOfSecret, timeout, @which, @sigA, @pubkeyA, @si
         hashOfSecret
         OP_EQUAL
     }
-    else
+    else  // Alice is able to recover her funds if Bob does not.
     {
         OP_CHECKSIGVERIFY(addrA, @sigA,@pubkeyA)
-        OP_CHECKLOCKTIMEVERIFY(timeout)        
+        OP_CHECKLOCKTIME(timeout)        
     }
 }
 
