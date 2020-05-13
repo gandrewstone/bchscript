@@ -18,7 +18,8 @@ def atomicSwap(addrA, addrB, hashOfSecret, timeout, @which, @sigA, @pubkeyA, @si
     else  // Alice is able to recover her funds if Bob does not.
     {
         OP_CHECKSIGVERIFY(addrA, @sigA,@pubkeyA)
-        OP_CHECKLOCKTIME(timeout)        
+        OP_CHECKLOCKTIMEVERIFY(timeout)
+        // we don't op_drop, leaving timeout on the stack which is a positive number so the script evaluates to true
     }
 }
 

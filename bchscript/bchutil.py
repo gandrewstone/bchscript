@@ -3,6 +3,7 @@ from binascii import hexlify, unhexlify
 import hashlib
 import bchscript.bchopcodes as bchopcodes
 import bchscript.cashaddrutil as cashaddrutil
+import bchscript.errors as err
 
 if not "BCH_ADDRESS_PREFIX" in globals():  # don't initialize twice
     BCH_ADDRESS_PREFIX = None
@@ -20,7 +21,7 @@ def ScriptifyData(tmp):
             ret.append(ScriptifyData(t))
         return b"".join(ret)
 
-    if 1:    
+    if 1:
         ret = []
         if type(tmp) is str:
             tmp = bytes(tmp,"utf-8")
@@ -116,17 +117,18 @@ def applyTemplate(template, **kwargs):
     for t in template:
         if type(t) is str:
             if t[0] is '$':
-                applied.append(kwargs[t[1:]])
+                t = kwargs.get(t[1:], t)  # Use the binding or the name if there is no binding
+                applied.append(t)
             elif t[0] is '@':
-                pass # skip all the solution pushes
+                applied.append(t)
             else:
-                raise "bad template"
+                raise err.Output("bad template")
         else:
             applied.append(t)
-    return b"".join(applied)
+    return applied
 
 
-def script2bin(opcodes):
+def script2bin(opcodes, showSatisfierItems=True, showTemplateItems=True):
     """Convert a program to a binary string"""
     if not type(opcodes) is list:
         opcodes = [opcodes]
@@ -135,11 +137,16 @@ def script2bin(opcodes):
     for opcode in opcodes:
         if type(opcode) is str:
             if opcode[0] == "@":  # its an existing stack arg, so no-op
-                continue
-            opcode = opcode.encode("utf-8")
+                if showSatisfierItems:
+                    ret.append(opcode)
+            elif opcode[0] == "$":  # its an existing stack arg, so no-op
+                if showTemplateItems:
+                    ret.append(opcode)
+            else:
+                ret.append(opcode.encode("utf-8"))
 
         # serialize object to bytes
-        if hasattr(opcode, "scriptify"):
+        elif hasattr(opcode, "scriptify"):
             ret.append(opcode.scriptify())
         elif hasattr(opcode, "serialize"):
             ret.append(opcode.serialize())
@@ -168,6 +175,19 @@ def FromHex(obj, hex_string):
 def ToHex(obj):
     if type(obj) is bytes:
         return hexlify(obj).decode('ascii')
+    if type(obj) is str:
+        if obj[0] == '@':  # include satisfier script inputs
+            return "_" + obj + "_"
+        if obj[0] == '$':  # include template params
+            return "_" + obj + "_"
+    
+    if type(obj) is list:
+        r = []
+        for i in obj:
+            if not i:   # skip empty
+                continue
+            r.append(ToHex(i))
+        return "".join(r)
     return hexlify(obj.serialize()).decode('ascii')
 
 
@@ -266,3 +286,11 @@ def anything2bytes(msg):
     if type(msg) is str:
         msg = msg.encode("utf-8")
     return msg
+
+def reportBadStatement(tokens, n, symbols, printIt=True):
+    s = "ERROR: Bad statement or undefined symbol: %s\n" % tokens[n]
+    s+= "    Known symbols: %s\n" % list(filter(lambda x: type(x) is str, symbols.keys()))
+    s+= "    Context: %s\n" % tokens[n-10:n+10]
+    if printIt: print(s)
+    return s
+

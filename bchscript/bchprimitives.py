@@ -1,6 +1,8 @@
 import pdb
 import copy
 import bchscript.bchopcodes as bchopcodes
+import bchscript.errors as err
+from bchscript.bchutil import *
 
 statementConsumerCallout = None
 
@@ -82,8 +84,8 @@ def argsConsumer(tokens, n, validSymbols):
             arg.append(int(tokens[n]))
             n += 1
         elif tokens[n][0] == '$':
-            arg.append(TemplateParam(tokens[n+1]))
-            n += 2
+            arg.append(TemplateParam(tokens[n][1:]))
+            n += 1
         elif tokens[n][0] == '"':  # Push data onto the stack
             arg.append(tokens[n])
             n += 1
@@ -180,9 +182,9 @@ class SpendScriptItem:
                 return bytes(self.val)
             else:
                 return self.val
-        else:
-            # TODO why return template param?
-            return TemplateParam(self.name)
+        else: # If this item isn't bound should I throw or return its unbound name?
+            # raise err.Output("Spend script item has no value")
+            return self.scriptify()
 
     def scriptify(self):
         return "@" + self.name
@@ -196,8 +198,12 @@ class Param:
         self.name = name
 
     def compile(self, symbols=None):
+        # print(self.name[0])
         if self.name[0] == "@":  # This is an implicitly pushed stack parameter
-            return [SpendScriptItem(self.name, symbols.get(self.name, None))]  # return the binding if it exists or the param name
+            return [SpendScriptItem(self.name[1:], symbols.get(self.name, None))]  # return the binding if it exists or the param name
+        if self.name[0] == "$":  # This is an implicitly pushed stack parameter
+            pdb.set_trace()
+            return [TemplateParam(self.name[1:], symbols.get(self.name, None))]  # return the binding if it exists or the param name
         binding = symbols.get(self.name)
         if binding is None:
             assert not "parameter %s is not bound" % self.name
@@ -304,7 +310,6 @@ class RepeatConstruct:
         assert(0)  # should never call this because compile causes this to disappear
 
 
-        
 class IfConstruct:
     """Implement the if () {} construct"""
 
@@ -354,13 +359,16 @@ class ElseConstruct:
 
     def parse(self, tokens, n, symbols=None):
         if tokens[n] == "(":  # optional if param
-            (n, self.arg) = argsConsumer(tokens, n, symbols)
+            (m, self.arg) = argsConsumer(tokens, n, symbols)
         if tokens[n] == "{":
-            (n, self.statements) = statementConsumerCallout(tokens, n + 1, symbols)
+            (m, self.statements) = statementConsumerCallout(tokens, n + 1, symbols)
         else:
             assert 0, "need block"
-        assert tokens[n] == "}"
-        return (n + 1, copy.copy(self))
+        if tokens[m] != "}":
+            raise err.Parse(reportBadStatement(tokens, m, symbols, False))
+
+        # assert tokens[m] == "}"
+        return (m + 1, copy.copy(self))
 
     def compile(self, symbols):
         ret = []

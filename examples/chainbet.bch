@@ -1,0 +1,95 @@
+include "examples/stdscripts.bch"
+
+// Phase 1: Escrowing the funds
+
+def SecretEscrow(timeout, Apub, Bpub, hashOfSecret, @secret, @Asig, @Bsig)
+{
+    OP_IF
+        timeout                   // After a certain timeout
+        OP_CHECKSEQUENCEVERIFY
+        OP_DROP
+        Apub                      // A can spend
+        OP_CHECKSIG
+    OP_ELSE
+        @secret
+        OP_HASH160                // Check that the secret is revealed
+        hashOfSecret
+        OP_EQUALVERIFY
+        multisig2(Apub, Bpub, @Asig, @Bsig)  // And both parties are spending
+    OP_ENDIF
+}
+
+
+def Escrow(timeout, Apub, Bpub, @Asig, @Bsig)
+{
+    OP_IF
+        timeout
+        Apub
+        OP_CHECKSEQUENCEVERIFY
+        OP_DROP
+    OP_ELSE
+        multisig2(Apub, Bpub, @Asig, @Bsig)
+    OP_ENDIF
+}
+
+
+// Phase 2: funding the bet
+
+def Bet(timeout, Apub, Bpub, AhashOfSecret, BhashOfSecret, @Asecret, @Bsecret)
+{
+OP_IF 
+    OP_IF                      // Alice redeems given Bob's secret
+        @Bsecret
+        OP_HASH160
+        BhashOfSecret
+        OP_EQUALVERIFY 
+    OP_ELSE                    // Alice redeems if Bob disappears after losing
+        timeout OP_CHECKSEQUENCEVERIFY OP_DROP 
+    OP_ENDIF 
+    Apub
+    OP_CHECKSIG 
+OP_ELSE  // Bob redeems if he won the bet
+    @Asecret
+    @Bsecret
+    OP_DUP                     // Verify that Bob's secret matches the commitment
+    OP_HASH160
+    BhashOfSecret
+    OP_EQUALVERIFY
+    
+    OP_OVER                    // Verify that Alice's secret matches the commitment
+    OP_HASH160
+    AhashOfSecret
+    OP_EQUALVERIFY 
+
+    4                          // Turn Alice's secret into a 32 bit number
+    OP_SPLIT
+    OP_DROP
+    OP_BIN2NUM 
+
+    OP_SWAP                    // Turn Bob's secret into a 32 bit number
+    4
+    OP_SPLIT
+    OP_DROP
+    OP_BIN2NUM
+    
+    OP_ADD                     // Add the secrets
+    2
+    OP_MOD                     // Take the sum % 2 to get a 0 or 1
+    OP_0
+    OP_EQUALVERIFY             // if its a 0 (pick one) we'll let Bob win
+    
+    Bpub                       // Verify Bob's signature
+    OP_CHECKSIG 
+OP_ENDIF
+}
+
+
+def main(Apub, Bpub, Asecret, Bsecret)
+{
+    // p2shify!("AliceSetup", SecretEscrow(8, $Apub, $Bpub, $Acommitment, $Asecret))
+    
+    p2shify!("AliceSetup", SecretEscrow(8, Apub, Bpub, hash160!(Asecret), Asecret))
+    p2shify!("BobSetup", Escrow(8, Apub, Bpub, hash160!(Bsecret), Bsecret))
+    p2shify!("bet", Bet(4, Apub, Bpub, hash160!(Asecret), hash160!(Bsecret), Asecret, Bsecret))
+}
+

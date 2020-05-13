@@ -5,7 +5,8 @@ import sys
 import traceback
 
 def excepthook(type, value, tb):
-    print(type.__name__ + ": " + str(value))
+    print("\n'" + type.__name__ + "' Exception Raised:")
+    # printed by print_exception: print(str(value))
     traceback.print_exception(type, value, tb)
     pdb.pm()
     print("exception")
@@ -22,7 +23,7 @@ class ParserError(Exception):
 
 
 multiTokens = ["0x", "->", "...", "bchtest:", "bitcoincash:", "bchreg:"]
-unitaryTokens = """,./?~`#$%^&*()-+=\|}{[]'";:"""
+unitaryTokens = """,./?~`#%^&*()-+=\|}{[]'";:"""
 
 bchStatements = primitives
 bchStatements.update(immediates)
@@ -35,25 +36,32 @@ def statementConsumer(tokens, n, localSymbols):
             break
         try:
             i = int(tokens[n])  # Push a number onto the stack
+            isAnInt = True
+        except:
+            isAnInt = False
+
+        if isAnInt:
             stmts.append(i)
             n += 1
-        except:
-            if tokens[n][0] == '"':  # Push data onto the stack
+        elif tokens[n][0] == '"':  # Push data onto the stack
                 stmts.append(tokens[n])
                 n += 1
-            elif tokens[n] in localSymbols:
+        elif tokens[n][0] == '$':  # Template parameter
+                stmts.append(TemplateParam(tokens[n][1:]))
+                n += 1
+        elif tokens[n] in localSymbols:
                 syms = copy.copy(bchStatements)
                 syms.update(localSymbols)
                 (n, obj) = localSymbols[tokens[n]].parse(tokens, n + 1, syms)
                 stmts.append(obj)
-            elif tokens[n] in bchStatements:
+        elif tokens[n] in bchStatements:
                 syms = copy.copy(bchStatements)
                 syms.update(localSymbols)
                 (n, obj) = bchStatements[tokens[n]].parse(tokens, n + 1, syms)
                 if obj.outputs:
                     localSymbols.update(obj.outputs)
                 stmts.append(obj)
-            else:
+        else:
                 if tokens[n] != "}":  # expected closer so not a problem
                     print("%s is not a statement" % tokens[n])
                 break
@@ -94,7 +102,7 @@ class Scriptify:
     def compile(self, symbols):
         output = compileStatementList(self.statements, symbols)
         spend = self.solve(output)
-        return (self.name, {"script": output, "spend": spend})
+        return (self.name, {"constraint": output, "satisfier": spend})
 
     def solve(self, pgm, n=0, end=None):
         if end is None:
@@ -111,7 +119,7 @@ class Scriptify:
                 if not item.val is None:
                     ret.append(item.val)
                 else:
-                    ret.append(item.name)
+                    ret.append(item.scriptify())
                 n += 1
             elif type(item) is str and item == "OP_IF":
                 (els, endif) = condSection(n, pgm)
@@ -127,7 +135,6 @@ def RemoveSpendParams(script):
         if not type(s) is SpendScriptItem:
             ret.append(s)
     return ret
-    
 
 class P2shify(Scriptify):
     def __init__(self):
@@ -147,13 +154,8 @@ class P2shify(Scriptify):
         else:
             scriptHash = hash160(redeemBin)
         p2sh = [primitives["OP_HASH160"], scriptHash, primitives["OP_EQUAL"]]
-        return (self.name, {"script": p2sh, "spend": spend, "redeem": redeemCleaned})
+        return (self.name, {"constraint": p2sh, "satisfier": spend, "redeem": redeemCleaned})
 
-def reportBadStatement(tokens, n, symbols):
-    print("ERROR: Bad statement or undefined symbol: %s" % tokens[n])
-    print("    Known symbols: %s" % list(filter(lambda x: type(x) is str, symbols.keys())))
-    print("    Context: %s" % tokens[n-10:n+10])
-    # pdb.set_trace()
 
 class Define:
     def __init__(self):
@@ -267,8 +269,7 @@ def lex(fin):
     for line in fin:
         tcomment = line.split("//")
         splitquotes = [x for x in re.split("( |\\\".*?\\\"|'.*?')", tcomment[0]) if x.strip()]
-        # print(splitquotes)
-        # pdb.set_trace()
+        #print(splitquotes)
         for sq in splitquotes:
             if sq[0] == '"' or sq[0] == "'":
                 ret.append(sq)
@@ -276,7 +277,7 @@ def lex(fin):
                 tspc = sq.split()
                 for t in tspc:
                     tokens = separate(t)
-                    # print(tokens)
+                    # print("Toks: ", tokens)
                     ret += tokens
     return ret
 
@@ -315,13 +316,31 @@ def condSection(start, pgm):
     assert 0  # not closed
 
 
-def prettyPrint(opcodes):
+def prettyPrint(opcodes, showSatisfierItems=True, showTemplateItems=True):
     """Convert a program to a human-readable string"""
     ret = []
     indent = 0
     for opcode in opcodes:
-        if type(opcode) is str and opcode[0] == "@":
+        # Handle satisfier items
+        if type(opcode) is SpendScriptItem:
+            if showSatisfierItems:
+                ret.append(opcode.scriptify())
             continue
+        if type(opcode) is str and opcode[0] == "@":
+            if showSatisfierItems:
+                ret.append(opcode)
+            continue
+
+        # Handle template variables
+        if type(opcode) is TemplateParam:
+            if showSatisfierItems:
+                ret.append(opcode.scriptify())
+            continue
+        if type(opcode) is str and opcode[0] == "$":
+            if showTemplateItems:
+                ret.append(opcode)
+            continue
+
         if type(opcode) is str:
             if opcode[0] == '"' or opcode[0] == "'":
                 pass
@@ -336,7 +355,7 @@ def prettyPrint(opcodes):
 
         if opcode in ["OP_ELSE", "OP_ENDIF"]:
             indent -= 4
-            
+
         if type(opcode) is bytes:
             ret.append(" " * indent + ToHex(opcode))
         else:
@@ -366,10 +385,10 @@ def main(fin, fout):
     print(len(tokens), n)
     result = bchCompile(program)
     if "main" in result:
-        script = prettyPrint(result["main"]["script"])
+        script = prettyPrint(result["main"]["constraint"])
         fout.write(script)
         print("Script Hex:")
-        print(script2hex(result["main"]["script"]))
+        print(script2hex(result["main"]["constraint"]))
         solutions = result["main"]["spend"]
         print("\nScript:")
         print(script)

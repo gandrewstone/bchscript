@@ -24,11 +24,11 @@ def Thexlify(tpl):
 
 def dumpScript(s):
     print("Output script:")
-    print(prettyPrint(s["script"]))
-    print("Hex: " + Thexlify(script2bin(s["script"])))
+    print(prettyPrint(s["constraint"]))
+    print("Hex: " + Thexlify(script2bin(s["constraint"])))
     print("\nSpend script:")
-    print(prettyPrint(s["spend"]))
-    print("Hex: " + Thexlify(script2bin(s["spend"])))
+    print(prettyPrint(s["satisfier"]))
+    print("Hex: " + Thexlify(script2bin(s["satisfier"])))
 
     if "redeem" in s:
         print("\nRedeem script:")
@@ -55,8 +55,8 @@ def Test():
     inp = open("examples/math.bch", "r")
     ret = compile(inp)
 
-    out = script2bin(ret["out0"]["script"])
-    inp = script2bin(ret["inp"]["script"])
+    out = script2bin(ret["out0"]["constraint"])
+    inp = script2bin(ret["inp"]["constraint"])
     
     f = open("aflinput1.bin","wb")
     flags = 0

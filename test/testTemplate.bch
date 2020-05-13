@@ -1,0 +1,3 @@
+include "../examples/stdscripts.bch"
+
+scriptify!("main",p2pkh($addr))

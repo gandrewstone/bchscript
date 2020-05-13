@@ -98,7 +98,6 @@ class BchAddress:
     def scriptify(self):
         tmp = self.serialize()
         return ScriptifyData(tmp)
-    
 
     def serialize(self):
         tmp = bitcoinAddress2bin(self.name)

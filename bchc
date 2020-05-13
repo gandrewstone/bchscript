@@ -4,6 +4,7 @@ import re
 import sys
 import argparse
 import io
+import json
 
 from bchscript.bchutil import *
 from bchscript.bchprimitives import *
@@ -43,19 +44,23 @@ def main(argv):
                 d = {}
 
                 for (scriptType, t) in value.items():
+                    if scriptType == "satisfier":
+                        xformParams = (True, True)
+                    else:
+                        xformParams = (False, True)
                     outp = []
                     if params.hex:
-                        outp.append(ToHex(script2bin(t)))
+                        outp.append(ToHex(applyTemplate(script2bin(t, *xformParams))))
                     if params.opcode:
                         outp.append(prettyPrint(t))
                     d[scriptType] = outp
 
                 ret[key] = d
-            out = [str(ret)]
+            out = [json.dumps(ret,sort_keys=True, indent=4)]
 
         else:
             try:
-                t = result[params.display]["script"]
+                t = result[params.display]["constraint"]
             except KeyError:
                 sys.stderr.write("Error: script must include a '%s' scriptify! command\n" % params.display)
                 return
