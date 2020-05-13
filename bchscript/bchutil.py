@@ -1,4 +1,5 @@
 import pdb
+import sys
 from binascii import hexlify, unhexlify
 import hashlib
 import bchscript.bchopcodes as bchopcodes
@@ -135,27 +136,40 @@ def script2bin(opcodes, showSatisfierItems=True, showTemplateItems=True):
 
     ret = []
     for opcode in opcodes:
+        s = None
         if type(opcode) is str:
             if opcode[0] == "@":  # its an existing stack arg, so no-op
-                if showSatisfierItems:
-                    ret.append(opcode)
+                s = opcode
             elif opcode[0] == "$":  # its an existing stack arg, so no-op
-                if showTemplateItems:
-                    ret.append(opcode)
+                s = opcode
             else:
                 ret.append(opcode.encode("utf-8"))
 
         # serialize object to bytes
         elif hasattr(opcode, "scriptify"):
-            ret.append(opcode.scriptify())
+            s = opcode.scriptify()
         elif hasattr(opcode, "serialize"):
-            ret.append(opcode.serialize())
+            s = opcode.serialize()
         elif type(opcode) is int:
-            ret.append(ScriptifyNumber(opcode))
+            s = ScriptifyNumber(opcode)
         elif type(opcode) is bytes:  # encode the command to push data onto stack, then the data
-            ret.append(ScriptifyData(opcode))
+            s = ScriptifyData(opcode)
         else:
             assert 0, "Not fully compiled: %s" % opcode
+
+        if type(s) is str:
+            if s[0] == "@":  # its an existing stack arg, so no-op
+                if showSatisfierItems:
+                    ret.append(s)
+            elif s[0] == "$":  # its an existing stack arg, so no-op
+                if showTemplateItems:
+                    ret.append(s)
+            else:
+                ret.append(opcode.encode("utf-8"))
+        else:
+            if not s is None:
+                ret.append(s)
+
     return templatedJoin(ret)
 
 
@@ -294,3 +308,5 @@ def reportBadStatement(tokens, n, symbols, printIt=True):
     if printIt: print(s)
     return s
 
+def warn(s):
+    print(s, file=sys.stderr)

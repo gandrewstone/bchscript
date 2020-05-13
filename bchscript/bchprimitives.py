@@ -423,4 +423,12 @@ primitives = {
 }
 
 for name, bin in bchopcodes.opcode2bin.items():
-    primitives[name] = Primitive(name, bin)
+    if name[0:3] == "OP_": # add the opcodes without the OP_ prefix
+        primitives[name] = Primitive(name[3:], bin)
+        try:
+            i = int(name[3:])
+            # If its a numerical constant opcode don't add it in its non OP_ form
+        except:
+            primitives[name[3:]] = Primitive(name[3:], bin)
+    else:
+        primitives[name] = Primitive(name, bin)

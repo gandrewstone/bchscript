@@ -1,3 +1,4 @@
+
 opcode2bin = {
     # push value
     "OP_0": 0x00,

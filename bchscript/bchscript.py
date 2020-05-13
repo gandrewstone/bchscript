@@ -3,6 +3,7 @@ import pdb
 import re
 import sys
 import traceback
+import os.path
 
 def excepthook(type, value, tb):
     print("\n'" + type.__name__ + "' Exception Raised:")
@@ -208,13 +209,31 @@ class Define:
 class Include:
     """Implement the include primitive"""
 
-    def __init__(self):
-        self.name = "def"
+    def __init__(self, searchPath=None):
+        self.searchPath = searchPath
+        self.name = "include"
         self.statements = None
 
     def parse(self, tokens, n, symbols=None):
         filename = tokens[n].strip("'").strip('"')
-        inp = open(filename, "r")
+        inp = None
+        inpfname = None
+        dup = []
+        for p in self.searchPath:
+            try:
+                if inp is None:
+                    inpfname = os.path.abspath(os.path.join(p, filename))
+                    inp = open(inpfname, "r")
+                else:
+                    potDup = os.path.abspath(os.path.join(p, filename))
+                    if inpfname != potDup and os.path.isfile(potDup):
+                        dup.append(p)
+            except FileNotFoundError as e:
+                pass
+        if inp is None:
+            raise FileNotFoundError("Cannot find included file '%s' in search path '%s'" % (filename, self.searchPath))
+        if len(dup):
+            warn("Included file %s has duplicates here: %s" % (inpfname, " ".join(dup)))
         newtokens = lex(inp)
         # insert the tokens of the included file at this point
         tokens[n + 1:n + 1] = newtokens
@@ -228,8 +247,9 @@ topScope = {"def": Define(), "scriptify!": Scriptify(), "p2shify!": P2shify(), "
 
 bchStatements.update({"scriptify!": Scriptify(), "p2shify!": P2shify()})
 
-def topParser(tokens, n):
+def topParser(tokens, n, searchPath):
     stmts = []
+    topScope["include"] = Include(searchPath)
     while tokens[n] in topScope:
 #        print(tokens[n])
         (n, obj) = topScope[tokens[n]].parse(tokens, n + 1)
@@ -365,12 +385,12 @@ def prettyPrint(opcodes, showSatisfierItems=True, showTemplateItems=True):
     return "\n".join(ret)
 
 
-def compile(s):
+def compile(s, searchPath):
     """Accepts either a string or an iterable of lines"""
     if type(s) is str:
         s = s.split("\n")
     tokens = lex(s)
-    (n, program) = topParser(tokens, 0)
+    (n, program) = topParser(tokens, 0, searchPath)
     result = bchCompile(program)
     return result
 

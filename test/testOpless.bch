@@ -1,0 +1,16 @@
+include "stdscripts.bch"
+
+def requireAge(age)
+  {
+      age
+      CHECKLOCKTIMEVERIFY
+      DROP
+  }
+
+def lockUntil(age, address)
+  {
+      requireAge(age)
+      p2pkh(address)
+  }
+
+scriptify!("main", lockUntil($timeInSec, $address))
