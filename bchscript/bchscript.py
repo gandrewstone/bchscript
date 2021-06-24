@@ -105,11 +105,12 @@ class Scriptify:
         spend = self.solve(output)
         return (self.name, {"constraint": output, "satisfier": spend})
 
-    def solve(self, pgm, n=0, end=None):
+    def solve_old(self, pgm, n=0, end=None):
+        """Given a program, figure out the satisfier scripts"""
         if end is None:
             end = len(pgm)
         ret = []
-
+        pdb.set_trace()
         while n < end:
             item = pgm[n]
             if type(item) is str and item[0] == "@":
@@ -129,6 +130,36 @@ class Scriptify:
             else:
                 n += 1
         return ret
+
+    def solve(self, pgm, n=0, end=None, stack=None):
+        """Given a program, figure out the satisfier scripts"""
+        if stack is None:
+            stack = []
+        if end is None:
+            end = len(pgm)
+        ret = []
+        pdb.set_trace()
+        while n < end:
+            item = pgm[n]
+            if type(item) is str and item[0] == "@":
+                stack.append(item)
+                n += 1
+                continue
+            elif type(item) is SpendScriptItem:
+                if not item.val is None:
+                    stack.append(item.val)
+                else:
+                    stack.append(item.scriptify())
+                n += 1
+            elif type(item) is str and item == "OP_IF":
+                (els, endif) = condSection(n, pgm)
+                ret.append([self.solve(pgm, n + 1, els - 1), self.solve(pgm, els + 1, endif - 1)])
+                n = endif + 1
+            else:
+                n += 1
+        return ret
+
+
 
 def RemoveSpendParams(script):
     ret = []
@@ -344,21 +375,21 @@ def prettyPrint(opcodes, showSatisfierItems=True, showTemplateItems=True):
         # Handle satisfier items
         if type(opcode) is SpendScriptItem:
             if showSatisfierItems:
-                ret.append(opcode.scriptify())
+                ret.append(" " * indent + opcode.scriptify())
             continue
         if type(opcode) is str and opcode[0] == "@":
             if showSatisfierItems:
-                ret.append(opcode)
+                ret.append(" " * indent + opcode)
             continue
 
         # Handle template variables
         if type(opcode) is TemplateParam:
             if showSatisfierItems:
-                ret.append(opcode.scriptify())
+                ret.append(" " * indent + opcode.scriptify())
             continue
         if type(opcode) is str and opcode[0] == "$":
             if showTemplateItems:
-                ret.append(opcode)
+                ret.append(" " * indent + opcode)
             continue
 
         if type(opcode) is str:
@@ -366,6 +397,8 @@ def prettyPrint(opcodes, showSatisfierItems=True, showTemplateItems=True):
                 pass
             else:
                 opcode = '"' + opcode + '"'
+        if (hasattr(opcode, "str")):
+            opcode = opcode.str()
         if type(opcode) is Primitive:
             opcode = opcode.name
         if type(opcode) is BchAddress:
@@ -373,14 +406,14 @@ def prettyPrint(opcodes, showSatisfierItems=True, showTemplateItems=True):
         if type(opcode) is HexNumber:
             opcode = opcode.name
 
-        if opcode in ["OP_ELSE", "OP_ENDIF"]:
+        if opcode in ["ELSE", "ENDIF"]:
             indent -= 4
 
         if type(opcode) is bytes:
             ret.append(" " * indent + ToHex(opcode))
         else:
             ret.append(" " * indent + str(opcode))
-        if opcode in ["OP_IF", "OP_ELSE"]:
+        if opcode in ["IF", "ELSE"]:
             indent += 4
     return "\n".join(ret)
 
@@ -395,35 +428,25 @@ def compile(s, searchPath):
     return result
 
 
-def main(fin, fout):
+def main(fin, fout, searchPath):
     tokens = lex(fin)
     print("LEX:\n", tokens, "\n\n")
     # pdb.set_trace()
-    (n, program) = topParser(tokens, 0)
+    (n, program) = topParser(tokens, 0, searchPath)
     print(tokens)
     print(program)
     print(len(tokens), n)
+    pdb.set_trace()
     result = bchCompile(program)
     if "main" in result:
-        script = prettyPrint(result["main"]["constraint"])
+        constraint = result["main"]["constraint"]
+        script = prettyPrint(constraint)
         fout.write(script)
         print("Script Hex:")
-        print(script2hex(result["main"]["constraint"]))
-        solutions = result["main"]["spend"]
-        print("\nScript:")
+        constraintHex = script2hex(constraint)
+        print(constraintHex)
+        solutions = result["main"]["satisfier"]
+        print("\nConstraint Script:")
         print(script)
-        print("\nSpend Script:")
+        print("\nSatisfier Script:")
         print(solutions)
-
-
-def Test():
-    #inp = open("test/simplecond.bch","r")
-    # inp = open("test/atomicswap.bch","r")
-    inp = open("test/simple.bch", "r")
-    #inp = open("test/hexencode.bch","r")
-    # inp = open("test.bch","r")
-    #inp = open("test/immediates.bch","r")
-    oup = open("solve.txt", "w")
-    main(inp, oup)
-    inp.close()
-    oup.close()

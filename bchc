@@ -20,6 +20,7 @@ def main(argv):
     parser.add_argument('--display', action='store', default='main', dest='display', help='what to output')
     parser.add_argument('-I', action='append', dest='includeDirs', help='specify a directory for included files')
     parser.add_argument('-o', action='store', dest='output', help='write output to specified file')
+    parser.add_argument('-g', action='store_true', default=True, dest='dbg', help='create a debugging file')
 
     params = parser.parse_args(argv[1:])
     if params.hex == False and params.opcode == False:

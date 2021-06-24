@@ -342,10 +342,11 @@ class IfConstruct:
         return ret
 
     def str(self):
-        return self.name
+        return self.name[3:]
 
     def serialize(self):
-        return bytes([bchopcodes.opcode2bin[self.name]])
+        return bytes([bchopcodes.opcode2bin(self.name)])
+
 
 
 class ElseConstruct:
@@ -377,14 +378,14 @@ class ElseConstruct:
         ret.append(self)
         if not self.statements is None:
             ret.extend(compileStatementList(self.statements, symbols))
-        ret.append(primitives["OP_ENDIF"])
+        ret.append(primitives["ENDIF"])
         return ret
 
     def str(self):
-        return self.name
+        return self.name[3:]
 
     def serialize(self):
-        return bytes([bchopcodes.opcode2bin[self.name]])
+        return bytes([bchopcodes.opcode2bin(self.name)])
 
 
 def elseParser(prim, tokens, n, symbols):
@@ -422,13 +423,14 @@ primitives = {
     "repeat": SP_REPEAT
 }
 
-for name, bin in bchopcodes.opcode2bin.items():
+for name, bin in bchopcodes.opcodeData.items():
     if name[0:3] == "OP_": # add the opcodes without the OP_ prefix
-        primitives[name] = Primitive(name[3:], bin)
+        primitives[name] = Primitive(name[3:], bin[0])
         try:
             i = int(name[3:])
             # If its a numerical constant opcode don't add it in its non OP_ form
         except:
-            primitives[name[3:]] = Primitive(name[3:], bin)
+            primitives[name[3:]] = Primitive(name[3:], bin[0])
     else:
-        primitives[name] = Primitive(name, bin)
+        primitives[name] = Primitive(name, bin[0])
+

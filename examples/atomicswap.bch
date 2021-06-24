@@ -6,22 +6,22 @@
 // Bob spends Alice's transaction now that he knows "secret".
 
 
-def atomicSwap(addrA, addrB, hashOfSecret, timeout, @which, @sigA, @pubkeyA, @sigB, @pubkeyB, @secret)
+def atomicSwap(pubkeyA,pubkeyB,hashOfSecret, timeout, @which, @sigA @sigB, @secret)
 {
     if (@which)
     {
-        OP_CHECKSIGVERIFY(addrB, @sigB, @pubkeyB)
+        OP_CHECKSIGVERIFY(@sigB, pubkeyB)
         OP_HASH160(@secret)
         hashOfSecret
         OP_EQUAL
     }
     else  // Alice is able to recover her funds if Bob does not.
     {
-        OP_CHECKSIGVERIFY(addrA, @sigA,@pubkeyA)
+        OP_CHECKSIGVERIFY(@sigA, pubkeyA)
         OP_CHECKLOCKTIMEVERIFY(timeout)
         // we don't op_drop, leaving timeout on the stack which is a positive number so the script evaluates to true
     }
 }
 
 
-scriptify!("main", atomicSwap("bitcoincash:addrA","bitcoincash:addrB", hash160!("Staple this battery to the correct horse"), "epochTime+(24*60*60)"))
+scriptify!("main", atomicSwap("nex:pubkeyA", "nex: pubkeyB", hash160!("Staple this battery to the correct horse"), "epochTime+(24*60*60)"))

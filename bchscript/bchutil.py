@@ -175,7 +175,28 @@ def script2bin(opcodes, showSatisfierItems=True, showTemplateItems=True):
 
 def script2hex(opcodes):
     """Convert a program to a hex string suitable for RPC"""
-    return hexlify(script2bin(opcodes)).decode("utf-8")
+    ret = []
+    tobytes = []
+    for phrases in opcodes:
+        for bins in script2bin(phrases):
+            if type(bins) is int:
+                tobytes.append(bins)
+            else:
+                # If there's some bytecode ready to convert, do it now before including a template param
+                if len(tobytes) > 0:
+                    ret.append(hexlify(bytes(tobytes)).decode("utf-8"))
+                    tobytes = []
+                if type(bins) is bytes:
+                    if bins != b"":
+                        ret.append(hexlify(bins).decode("utf-8"))
+                elif isinstance(bins, str):
+                    ret.append(bins)  # Its a template parameter
+                elif type(bins) is int:
+                    tobytes.append(bins)
+    # Any final bytes to convert to hex?
+    if len(tobytes) > 0:
+        ret.append(hexlify(bytes(tobytes)).decode("utf-8"))
+    return ret
 
 
 # Deserialize from a hex string representation (eg from RPC)
@@ -187,6 +208,8 @@ def FromHex(obj, hex_string):
 
 
 def ToHex(obj):
+    if hasattr(obj, 'serialize'):  # transform objects to binary
+        obj = obj.serialize()
     if type(obj) is bytes:
         return hexlify(obj).decode('ascii')
     if type(obj) is str:
