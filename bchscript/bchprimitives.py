@@ -189,7 +189,17 @@ class SpendScriptItem:
     def scriptify(self):
         return "@" + self.name
 
+    def __repr__(self):
+        return "<SpendScriptItem %s>" % self.name
 
+
+class ResultData:
+    def __init__(self, pushNum, opcode, args, altArgs):
+        self.pushNum = pushNum
+        self.opcode = opcode
+        self.args = args # portion of the main stack that this opcode uses
+        self.altArgs = altArgs # portion of the alt stack that this opcode uses
+    
 class Param:
     """
     """
@@ -236,15 +246,21 @@ class Param:
 
 
 class Primitive:
-    def __init__(self, name, bin, parserFn=None):
+    def __init__(self, name, bin, stackConsumption, stackProduction, simFn, parserFn=None):
         self.name = name
         self.parserFn = parserFn
         self.outputs = None
         self.bin = bin
+        self.stackConsumption = stackConsumption
+        self.stackProduction = stackProduction
+        self.simFn = simFn
         self.params = []
 
     def str(self):
         return self.name
+
+    def __repr__(self):
+        return "<Primitive %s>" % self.name
 
     def serialize(self):
         return bytes([self.bin])
@@ -257,6 +273,12 @@ class Primitive:
 
         ret.append(self)
         return ret
+
+    def stackEffect(self, stack, altstack):
+        """Returns ((consumed, produced), (altConsumed, altProduced)), which describes how this operation affects the stacks.  Does not modify stack or altstack"""
+        ## TODO handle many weird cases
+        return ((self.stackConsumption, self.stackProduction), (0,0))
+        
 
     def parse(self, tokens, n, symbols=None):
         """
@@ -271,6 +293,25 @@ class Primitive:
                 (n, self.outputs) = paramsConsumer(tokens, n + 1)
             dup = copy.copy(self)
             return (n, dup)
+
+def isPrimitive(obj, opcode):
+    """Returns true if this is a primitive object of the passed opcode, or a string of that opcode (DON'T prefix with OP_)"""
+    if type(obj) is Primitive:
+        s = obj.name
+    else:
+        s = obj # Its a string
+    return (s == opocde) or ("OP_" + opcode == s)
+
+def isOpcode(obj, opcode):
+    """Returns true if this any form of the passed opcode (DON'T prefix with OP_) string (object or string)"""
+    if type(obj) is IfConstruct: s = "IF"
+    elif type(obj) is ElseConstruct: s = "ELSE"
+    elif type(obj) is Primitive:
+        s = obj.name
+    else:
+        s = obj # Its a string
+    return (s == opcode) or (s == "OP_" + opcode)
+
 
 class RepeatConstruct:
     """Implement the repeat (n) {} construct"""
@@ -344,6 +385,9 @@ class IfConstruct:
     def str(self):
         return self.name[3:]
 
+    def repr(self):
+        return "<IfConstruct>"
+
     def serialize(self):
         return bytes([bchopcodes.opcode2bin(self.name)])
 
@@ -384,6 +428,9 @@ class ElseConstruct:
     def str(self):
         return self.name[3:]
 
+    def repr(self):
+        return "<ElseConstruct>"
+
     def serialize(self):
         return bytes([bchopcodes.opcode2bin(self.name)])
 
@@ -414,7 +461,13 @@ SP_IF = IfConstruct()
 SP_ELSE = ElseConstruct()  # Primitive("else", None, elseParser)
 SP_REPEAT = RepeatConstruct()
 
-SP_EXEC = Primitive("exec", None)
+def simExec(stk):
+    # if these are constants pushed to the stack, we can still reason about them
+    numReturns = stk[-1]
+    numParams = stk[-2] + 3  # + 3 because these 2 stack items and the code
+    return(numParams, numReturns)
+
+SP_EXEC = Primitive("exec", None, None, simExec, None)
 
 primitives = {
     "if": SP_IF,
@@ -423,14 +476,14 @@ primitives = {
     "repeat": SP_REPEAT
 }
 
-for name, bin in bchopcodes.opcodeData.items():
+for name, data in bchopcodes.opcodeData.items():
     if name[0:3] == "OP_": # add the opcodes without the OP_ prefix
-        primitives[name] = Primitive(name[3:], bin[0])
+        primitives[name] = Primitive(name[3:], data[0], data[1], data[2], data[3])
         try:
             i = int(name[3:])
             # If its a numerical constant opcode don't add it in its non OP_ form
         except:
-            primitives[name[3:]] = Primitive(name[3:], bin[0])
+            primitives[name[3:]] = Primitive(name[3:], data[0], data[1], data[2], data[3])
     else:
-        primitives[name] = Primitive(name, bin[0])
+        primitives[name] = Primitive(name, data[0], data[1], data[2], data[3])
 

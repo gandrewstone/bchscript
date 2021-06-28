@@ -16,7 +16,7 @@ sys.excepthook = excepthook
 
 from bchscript.bchutil import *
 from bchscript.bchprimitives import *
-from bchscript.bchimmediates import immediates, BchAddress, HexNumber
+from bchscript.bchimmediates import Immediate, immediates, BchAddress, HexNumber
 
 
 class ParserError(Exception):
@@ -110,7 +110,6 @@ class Scriptify:
         if end is None:
             end = len(pgm)
         ret = []
-        pdb.set_trace()
         while n < end:
             item = pgm[n]
             if type(item) is str and item[0] == "@":
@@ -131,35 +130,74 @@ class Scriptify:
                 n += 1
         return ret
 
-    def solve(self, pgm, n=0, end=None, stack=None):
+    def allSatisfiers(self, stack):
+        for s in stack:
+            if type(s) is str and s[0] != '@': return False
+            if not type(s) is SpendScriptItem: return False
+        return True
+
+    def simStack(self, item, stack, altstack, satisfierStack):
+        if type(item) is str:
+            stack.append(item)
+        elif type(item) is Immediate:
+            stack.append(item)
+        elif type(item) is SpendScriptItem:
+            if not self.allSatisfiers(stack):  # If the stack isn't clean now, then a satisfier script (pre-executing) can't push the param onto the stack here (after this script has pushed something)
+                raise Exception("Satisfier parameter misplaced: %s" % item.name, "")
+            # Ok we could have run a satisfier script to have placed something on the stack here, so let's pretend that that happened.
+            satisfierStack.append(item)
+            stack.append(item)
+        elif type(item) is Primitive:
+            ((consumed, produced), (altconsumed, altproduced)) = item.stackEffect(stack, altstack)
+            removed = []
+            altRemoved = []
+            # TODO altstack
+            if altconsumed > 0:
+                altRemoved = altstack[-altconsumed:]
+            if consumed > 0:
+                removed = stack[-consumed:]
+                del stack[-consumed:]
+            if produced > 0:
+                # Put placeholders onto the stack for what this opcode did
+                for i in range(0,produced):
+                    stack.append(ResultData(i, item, removed, altRemoved))  # assumes all opcodes that read a stack element are specified as if they consume and replace that item
+
+    def solve(self, pgm, n=0, end=None, stack=None, altstack = None):
         """Given a program, figure out the satisfier scripts"""
         if stack is None:
             stack = []
+        if altstack is None:
+            altstack = []
         if end is None:
             end = len(pgm)
         ret = []
-        pdb.set_trace()
         while n < end:
             item = pgm[n]
-            if type(item) is str and item[0] == "@":
-                stack.append(item)
-                n += 1
-                continue
-            elif type(item) is SpendScriptItem:
-                if not item.val is None:
-                    stack.append(item.val)
-                else:
-                    stack.append(item.scriptify())
-                n += 1
-            elif type(item) is str and item == "OP_IF":
+            if isOpcode(item, "IF"):
                 (els, endif) = condSection(n, pgm)
-                ret.append([self.solve(pgm, n + 1, els - 1), self.solve(pgm, els + 1, endif - 1)])
+                ret.append({1:self.solve(pgm, n + 1, els - 1), 0:self.solve(pgm, els + 1, endif - 1)})
                 n = endif + 1
             else:
+                self.simStack(item, stack, altstack, ret)
                 n += 1
-        return ret
+        rev = reverseListsIn(ret)  # We need to reverse the direction of execution because the last item pushed onto the stack is on top
+        return rev
 
-
+def reverseListsIn(lst):
+    print("reverse ", lst)
+    ret = []
+    for item in reversed(lst):
+        if type(item) is list:
+            ret.append(item) #  already reversed during recursive solver: reverseListsIn(item))
+        elif type(item) is dict:
+            rd = {}
+            pdb.set_trace()
+            for (k,v) in item.items():
+                rd[k] = v # already reversed during recursive solver: reverseListsIn(v)
+            ret.append(rd)
+        else:
+            ret.append(item)
+    return ret
 
 def RemoveSpendParams(script):
     ret = []
@@ -354,12 +392,13 @@ def condSection(start, pgm):
     elsepos = None
     pos = start
     while pos < len(pgm):
-        if pgm[pos] == "OP_IF":
+        item = pgm[pos]
+        if isOpcode(item, "IF"):
             nif += 1
-        elif pgm[pos] == "OP_ELSE":
+        elif isOpcode(item, "ELSE"):
             if nif == 1:
                 elsepos = pos
-        elif pgm[pos] == "OP_ENDIF":
+        elif isOpcode(item, "ENDIF"):
             nif -= 1
             if nif == 0:
                 return(elsepos, pos)
@@ -367,7 +406,7 @@ def condSection(start, pgm):
     assert 0  # not closed
 
 
-def prettyPrint(opcodes, showSatisfierItems=True, showTemplateItems=True):
+def prettyPrint(opcodes, showSatisfierItems=True, showTemplateItems=True, indent = 0):
     """Convert a program to a human-readable string"""
     ret = []
     indent = 0
@@ -377,19 +416,30 @@ def prettyPrint(opcodes, showSatisfierItems=True, showTemplateItems=True):
             if showSatisfierItems:
                 ret.append(" " * indent + opcode.scriptify())
             continue
-        if type(opcode) is str and opcode[0] == "@":
+        elif type(opcode) is str and opcode[0] == "@":
             if showSatisfierItems:
                 ret.append(" " * indent + opcode)
             continue
 
         # Handle template variables
-        if type(opcode) is TemplateParam:
+        elif type(opcode) is TemplateParam:
             if showSatisfierItems:
                 ret.append(" " * indent + opcode.scriptify())
             continue
-        if type(opcode) is str and opcode[0] == "$":
+        elif type(opcode) is str and opcode[0] == "$":
             if showTemplateItems:
                 ret.append(" " * indent + opcode)
+            continue
+        elif type(opcode) is list: # Script bifurcates (satisfier scripts)
+            paths = []
+            for fork in opcode:
+                paths.append(prettyPrint(fork,showSatisfierItems, showTemplateItems, indent = indent + 1))
+            ret.append("[")
+            for p in paths:
+                for s in p.split("\n"):
+                    ret.append(" " * (2*(indent+1)) + s)
+                if p != paths[-1]: ret.append(",")
+            ret.append("]")
             continue
 
         if type(opcode) is str:
@@ -415,7 +465,15 @@ def prettyPrint(opcodes, showSatisfierItems=True, showTemplateItems=True):
             ret.append(" " * indent + str(opcode))
         if opcode in ["IF", "ELSE"]:
             indent += 4
-    return "\n".join(ret)
+    return recursiveList2String(ret)  # "\n".join(ret)
+
+def recursiveList2String(lstParam, indent = 0):
+    lst = lstParam.copy()
+    for i in range(0,len(lst)):
+        l = lst[i]
+        if type(l) is list:
+            lst[i:i+1] = ["[", ",\n".join(recursiveList2String), "]"]
+    return "\n".join(lst)
 
 
 def compile(s, searchPath):
@@ -436,7 +494,6 @@ def main(fin, fout, searchPath):
     print(tokens)
     print(program)
     print(len(tokens), n)
-    pdb.set_trace()
     result = bchCompile(program)
     if "main" in result:
         constraint = result["main"]["constraint"]
@@ -445,7 +502,7 @@ def main(fin, fout, searchPath):
         print("Script Hex:")
         constraintHex = script2hex(constraint)
         print(constraintHex)
-        solutions = result["main"]["satisfier"]
+        solutions = prettyPrint(result["main"]["satisfier"])
         print("\nConstraint Script:")
         print(script)
         print("\nSatisfier Script:")

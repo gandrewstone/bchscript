@@ -25,7 +25,7 @@ def evalParamsList(params, symbols):
 
 class Immediate(Primitive):
     def __init__(self, name, evalFn=None, docstring=None):
-        Primitive.__init__(self, name, None)
+        Primitive.__init__(self, name, 0,1, None, None)  # An immediate pushes 1 value to the stack
         self.evalFn = evalFn
         if docstring:
             self.__doc__ == docstring
@@ -42,9 +42,9 @@ class Immediate(Primitive):
     def eval(self, args):
         return self.evalFn(*args)
 
-class HexNumber:
+class HexNumber(Immediate):
     def __init__(self):
-        Primitive.__init__(self, "HexNumber", None)
+        Immediate.__init__(self, "HexNumber")
 
     def parse(self, tokens, n, symbols=None):
         obj = HexNumber()
