@@ -2,17 +2,7 @@
 import pdb
 import re
 import sys
-import traceback
 import os.path
-
-def excepthook(type, value, tb):
-    print("\n'" + type.__name__ + "' Exception Raised:")
-    # printed by print_exception: print(str(value))
-    traceback.print_exception(type, value, tb)
-    pdb.pm()
-    print("exception")
-
-sys.excepthook = excepthook
 
 from bchscript.bchutil import *
 from bchscript.bchprimitives import *
@@ -44,27 +34,27 @@ def statementConsumer(tokens, n, localSymbols):
         if isAnInt:
             stmts.append(i)
             n += 1
-        elif tokens[n][0] == '"':  # Push data onto the stack
+        elif str(tokens[n])[0] == '"':  # Push data onto the stack
                 stmts.append(tokens[n])
                 n += 1
-        elif tokens[n][0] == '$':  # Template parameter
-                stmts.append(TemplateParam(tokens[n][1:]))
+        elif str(tokens[n])[0] == '$':  # Template parameter, rip off the $ prefix
+                stmts.append(TemplateParam(tokens[n]))
                 n += 1
-        elif tokens[n] in localSymbols:
+        elif str(tokens[n]) in localSymbols:
                 syms = copy.copy(bchStatements)
                 syms.update(localSymbols)
-                (n, obj) = localSymbols[tokens[n]].parse(tokens, n + 1, syms)
+                (n, obj) = localSymbols[str(tokens[n])].parse(tokens, n + 1, syms)
                 stmts.append(obj)
-        elif tokens[n] in bchStatements:
+        elif str(tokens[n]) in bchStatements:
                 syms = copy.copy(bchStatements)
                 syms.update(localSymbols)
-                (n, obj) = bchStatements[tokens[n]].parse(tokens, n + 1, syms)
+                (n, obj) = bchStatements[str(tokens[n])].parse(tokens, n + 1, syms)
                 if obj.outputs:
                     localSymbols.update(obj.outputs)
                 stmts.append(obj)
         else:
-                if tokens[n] != "}":  # expected closer so not a problem
-                    print("%s is not a statement" % tokens[n])
+                if str(tokens[n]) != "}":  # expected closer so not a problem
+                    print(tokens[n].locationEmacspy("{token} is not a statement"))
                 break
 
     return (n, stmts)
@@ -105,31 +95,6 @@ class Scriptify:
         spend = self.solve(output)
         return (self.name, {"constraint": output, "satisfier": spend})
 
-    def solve_old(self, pgm, n=0, end=None):
-        """Given a program, figure out the satisfier scripts"""
-        if end is None:
-            end = len(pgm)
-        ret = []
-        while n < end:
-            item = pgm[n]
-            if type(item) is str and item[0] == "@":
-                ret.append(item)
-                n += 1
-                continue
-            elif type(item) is SpendScriptItem:
-                if not item.val is None:
-                    ret.append(item.val)
-                else:
-                    ret.append(item.scriptify())
-                n += 1
-            elif type(item) is str and item == "OP_IF":
-                (els, endif) = condSection(n, pgm)
-                ret.append([self.solve(pgm, n + 1, els - 1), self.solve(pgm, els + 1, endif - 1)])
-                n = endif + 1
-            else:
-                n += 1
-        return ret
-
     def allSatisfiers(self, stack):
         for s in stack:
             if type(s) is str and s[0] != '@': return False
@@ -139,15 +104,15 @@ class Scriptify:
     def simStack(self, item, stack, altstack, satisfierStack):
         if type(item) is str:
             stack.append(item)
-        elif type(item) is Immediate:
+        elif isinstance(item, Immediate):
             stack.append(item)
-        elif type(item) is SpendScriptItem:
+        elif isinstance(item,SpendScriptItem):
             if not self.allSatisfiers(stack):  # If the stack isn't clean now, then a satisfier script (pre-executing) can't push the param onto the stack here (after this script has pushed something)
                 raise Exception("Satisfier parameter misplaced: %s" % item.name, "")
             # Ok we could have run a satisfier script to have placed something on the stack here, so let's pretend that that happened.
-            satisfierStack.append(item)
+            #satisfierStack.append(item)
             stack.append(item)
-        elif type(item) is Primitive:
+        elif isinstance(item, Primitive):
             ((consumed, produced), (altconsumed, altproduced)) = item.stackEffect(stack, altstack)
             removed = []
             altRemoved = []
@@ -157,6 +122,11 @@ class Scriptify:
             if consumed > 0:
                 removed = stack[-consumed:]
                 del stack[-consumed:]
+                for r in removed:
+                    if isinstance(r,SpendScriptItem):
+                        if not r.pushedOntoSatisfier:
+                            r.pushedOntoSatisfier = True  # we will only push it once, and assume any other use is caused by duplication, etc
+                            satisfierStack.insert(0, r)
             if produced > 0:
                 # Put placeholders onto the stack for what this opcode did
                 for i in range(0,produced):
@@ -173,15 +143,16 @@ class Scriptify:
         ret = []
         while n < end:
             item = pgm[n]
+            self.simStack(item, stack, altstack, ret)
             if isOpcode(item, "IF"):
                 (els, endif) = condSection(n, pgm)
-                ret.append({1:self.solve(pgm, n + 1, els - 1), 0:self.solve(pgm, els + 1, endif - 1)})
+                # any satisfiers that are needed must be pushed before any satisfiers consumed by prior instructions so insert them at the beginning
+                ret.insert(0,({1:self.solve(pgm, n + 1, els), 0:self.solve(pgm, els + 1, endif - 1)}))
                 n = endif + 1
             else:
-                self.simStack(item, stack, altstack, ret)
                 n += 1
-        rev = reverseListsIn(ret)  # We need to reverse the direction of execution because the last item pushed onto the stack is on top
-        return rev
+        # rev = reverseListsIn(ret)  # We need to reverse the direction of execution because the last item pushed onto the stack is on top
+        return ret
 
 def reverseListsIn(lst):
     print("reverse ", lst)
@@ -191,7 +162,6 @@ def reverseListsIn(lst):
             ret.append(item) #  already reversed during recursive solver: reverseListsIn(item))
         elif type(item) is dict:
             rd = {}
-            pdb.set_trace()
             for (k,v) in item.items():
                 rd[k] = v # already reversed during recursive solver: reverseListsIn(v)
             ret.append(rd)
@@ -241,7 +211,7 @@ class Define:
         for b in bindings:
             a = self.args[count]
             if type(b) == list:
-                pdb.set_trace()
+                assert(false)
             ret[a] = b
             count += 1
         return ret
@@ -265,11 +235,11 @@ class Define:
         assert tokens[n] == "{"
         n += 1
         (n, self.statements) = statementConsumer(tokens, n, self.args)
+        cpy = copy.copy(self)
         if tokens[n] != "}":
             reportBadStatement(tokens, n, self.args)
-            assert tokens[n] == "}"
+            return (n+1, cpy) # sys.exit(1) # assert tokens[n] == "}"
         tmp = Binding(self.define)
-        cpy = copy.copy(self)
         tmp.instanceOf = cpy
         bchStatements[self.define] = tmp
         return (n + 1, cpy)
@@ -282,28 +252,30 @@ class Include:
         self.searchPath = searchPath
         self.name = "include"
         self.statements = None
+        self.filename = None
+        self.filepath = None
 
     def parse(self, tokens, n, symbols=None):
-        filename = tokens[n].strip("'").strip('"')
+        self.filename = tokens[n].strip("'").strip('"')
         inp = None
-        inpfname = None
+        self.filepath = None
         dup = []
         for p in self.searchPath:
             try:
                 if inp is None:
-                    inpfname = os.path.abspath(os.path.join(p, filename))
-                    inp = open(inpfname, "r")
+                    self.filepath = os.path.abspath(os.path.join(p, self.filename))
+                    inp = open(self.filepath, "r")
                 else:
-                    potDup = os.path.abspath(os.path.join(p, filename))
-                    if inpfname != potDup and os.path.isfile(potDup):
+                    potDup = os.path.abspath(os.path.join(p, self.filename))
+                    if self.filepath != potDup and os.path.isfile(potDup):
                         dup.append(p)
             except FileNotFoundError as e:
                 pass
         if inp is None:
-            raise FileNotFoundError("Cannot find included file '%s' in search path '%s'" % (filename, self.searchPath))
+            raise FileNotFoundError("Cannot find included file '%s' in search path '%s'" % (self.filename, self.searchPath))
         if len(dup):
-            warn("Included file %s has duplicates here: %s" % (inpfname, " ".join(dup)))
-        newtokens = lex(inp)
+            warn("Included file %s has duplicates here: %s" % (self.filepath, " ".join(dup)))
+        newtokens = lex(inp, self.filepath)
         # insert the tokens of the included file at this point
         tokens[n + 1:n + 1] = newtokens
         return (n + 1, copy.copy(self))
@@ -319,9 +291,9 @@ bchStatements.update({"scriptify!": Scriptify(), "p2shify!": P2shify()})
 def topParser(tokens, n, searchPath):
     stmts = []
     topScope["include"] = Include(searchPath)
-    while tokens[n] in topScope:
+    while str(tokens[n]) in topScope:
 #        print(tokens[n])
-        (n, obj) = topScope[tokens[n]].parse(tokens, n + 1)
+        (n, obj) = topScope[str(tokens[n])].parse(tokens, n + 1)
         stmts.append(obj)
         if n >= len(tokens):  # all done
             break
@@ -331,43 +303,49 @@ def topParser(tokens, n, searchPath):
     return (n, stmts)
 
 
-def separate(t):
+def separate(t, filename, lineNum, pos):
     ret = []
     cur = []
     for tok in multiTokens:
         idx = t.find(tok)
         if idx != -1:
-            pfx = separate(t[0:idx])
-            sfx = separate(t[idx + len(tok):])
-            return pfx + [tok] + sfx
+            pfx = separate(t[0:idx], filename, lineNum, pos)
+            sfx = separate(t[idx + len(tok):], filename, lineNum, pos)
+            return pfx + [TokenChunk(tok, filename, lineNum, idx)] + sfx
     for c in t:
         if c in unitaryTokens:
             if cur:
-                ret.append("".join(cur))
+                tmp = "".join(cur)
+                ret.append(TokenChunk(tmp, filename, lineNum, pos))
+                pos += len(tmp)
                 cur = []
             ret.append(c)
         else:
             cur.append(c)
     if cur:
-        ret.append("".join(cur))
+        ret.append(TokenChunk("".join(cur), filename, lineNum, pos))
     return ret
 
 
-def lex(fin):
+def lex(fin, filename):  # =None):
     ret = []
+    lineNum = 0
     for line in fin:
+        lineNum+=1
         tcomment = line.split("//")
-        splitquotes = [x for x in re.split("( |\\\".*?\\\"|'.*?')", tcomment[0]) if x.strip()]
+        splitquotes = [x for x in re.split("( |\\\".*?\\\"|'.*?')", tcomment[0]) if len(x) > 0]
         #print(splitquotes)
+        pos = 0
         for sq in splitquotes:
             if sq[0] == '"' or sq[0] == "'":
-                ret.append(sq)
+                ret.append(TokenChunk(sq, filename, lineNum, pos))
             else:
                 tspc = sq.split()
                 for t in tspc:
-                    tokens = separate(t)
+                    tokens = separate(t, filename, lineNum, pos)
                     # print("Toks: ", tokens)
                     ret += tokens
+            pos += len(sq)
     return ret
 
 
@@ -377,7 +355,6 @@ def bchCompile(program):
         temp = p.compile(None)
         commands.append(temp)
 
-    # pdb.set_trace()
     ret = {}
     for c in commands:
         if type(c) is tuple:
@@ -476,20 +453,19 @@ def recursiveList2String(lstParam, indent = 0):
     return "\n".join(lst)
 
 
-def compile(s, searchPath):
+def compile(s, searchPath, filename):
     """Accepts either a string or an iterable of lines"""
     if type(s) is str:
         s = s.split("\n")
-    tokens = lex(s)
+    tokens = lex(s, filename)
     (n, program) = topParser(tokens, 0, searchPath)
     result = bchCompile(program)
     return result
 
 
-def main(fin, fout, searchPath):
-    tokens = lex(fin)
+def main(fin, fout, searchPath, filename):
+    tokens = lex(fin, filename)
     print("LEX:\n", tokens, "\n\n")
-    # pdb.set_trace()
     (n, program) = topParser(tokens, 0, searchPath)
     print(tokens)
     print(program)
@@ -497,13 +473,20 @@ def main(fin, fout, searchPath):
     result = bchCompile(program)
     if "main" in result:
         constraint = result["main"]["constraint"]
-        script = prettyPrint(constraint)
+        script = prettyPrint(constraint, False)
         fout.write(script)
-        print("Script Hex:")
+        print("Constraint Script")
+        print("  Script Hex:")
+        constraintHex = script2bin(constraint, False)
+        print("  ", constraintHex)
         constraintHex = script2hex(constraint)
-        print(constraintHex)
-        solutions = prettyPrint(result["main"]["satisfier"])
-        print("\nConstraint Script:")
+        print("  ", constraintHex)
         print(script)
+
         print("\nSatisfier Script:")
+        solutions = prettyPrint(result["main"]["satisfier"])
         print(solutions)
+
+        print("\nCombined constraint script with satisfier pushes")
+        script = prettyPrint(constraint)
+        print(script)

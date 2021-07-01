@@ -17,6 +17,16 @@ RESULT=$(($RUN) 2>&1)
 RESULT=$(echo $RESULT | tr -d '\n')
 [ "$RESULT" == "_\$timeInSec_b17576a9_\$address_88ac" ] || echo "test $RUN failed with $RESULT"
 
+RUN="../bchc badLib.bch"
+RESULT=$(($RUN) 2>&1)
+RESULT=$(echo $RESULT | grep -o "badSymbol is not a statement" | wc -l)
+[ "$RESULT" == "1" ] || echo "test $RUN failed with $RESULT"
+
+RUN="../bchc badScript.bch"
+RESULT=$(($RUN) 2>&1)
+RESULT1=$(echo $RESULT | grep -o "badLib.bch" | wc -l)
+RESULT2=$(echo $RESULT | grep -o "undefined symbol" | wc -l)
+[[ "$RESULT1" > "0"  && "$RESULT2" > "0" ]] || echo "test $RUN failed with $RESULT"
 
 RUN="../bchc testTemplate.bch"
 RESULT=$(($RUN) 2>&1)

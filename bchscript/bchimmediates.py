@@ -13,7 +13,7 @@ def evalParamsList(params, symbols):
     for s in params:
         if type(s) is int:
             ret.append(s)
-        elif type(s) is str:
+        elif isinstance(s,str):
             ret.append(s)
         else:
             temp = s.compile(symbols)
@@ -101,6 +101,7 @@ class BchAddress:
 
     def serialize(self):
         tmp = bitcoinAddress2bin(self.name)
+        # print("Address %s is binary %s" % (self.name, ToHex(tmp)))
         return tmp
 
 

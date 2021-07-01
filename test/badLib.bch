@@ -1,0 +1,11 @@
+def p2pkh(pubkeyhash, @sig, @pubkey)
+  {
+  @sig
+  @pubkey
+  OP_DUP
+  badSymbol
+  OP_HASH160
+  pubkeyhash
+  OP_EQUALVERIFY
+  OP_CHECKSIG
+  }

@@ -11,6 +11,7 @@ from bchscript.bchprimitives import *
 from bchscript.bchimmediates import immediates, BchAddress
 from bchscript.bchscript import *
 
+config.SHOW_COMPILER_EXCEPTIONS = False
 
 def main(argv):
     parser = argparse.ArgumentParser(prog="bchc", description='Compile BchScript')
@@ -27,22 +28,24 @@ def main(argv):
         params.hex = True
 
     inp = None
+    filename = None
     if params.input:
         try:
             inp = open(params.input, "r")
+            filename = params.input
         except FileNotFoundError as e:
             if "OP" in params.input:  # try it as a text script
                 inp = params.input
+        inputFileDir = os.path.dirname(os.path.abspath(params.input))
     else:
         inp = sys.stdin
-
-    inputFileDir = os.path.dirname(os.path.abspath(params.input))
+        inputFileDir = os.getcwd()
 
     allIncludeDirs = [os.getcwd(), inputFileDir] + (params.includeDirs if params.includeDirs else [])
 
     out = []
     if inp:
-        result = compile(inp, allIncludeDirs)
+        result = compile(inp, allIncludeDirs, filename)
 
         if params.display == 'all':
             ret = {}

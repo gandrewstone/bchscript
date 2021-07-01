@@ -12,14 +12,18 @@ from bchscript.bchimmediates import immediates, BchAddress
 from bchscript.bchscript import *
 
 def Test():
-    searchPath = ["examples"]
+    searchPath = ["examples","test"]
     #inp = open("test/simplecond.bch","r")
-    inp = open("examples/atomicswap.bch","r")
+    #inFilename = "examples/atomicswap.bch"
+    inFilename = "test/testInclude.bch"
+    
     #inp = open("examples/simple.bch", "r")
     #inp = open("test/hexencode.bch","r")
     # inp = open("test.bch","r")
     #inp = open("test/immediates.bch","r")
     oup = open("solve.txt", "w")
-    main(inp, oup, searchPath)
+
+    inp = open(inFilename,"r")
+    main(inp, oup, searchPath, inFilename)
     inp.close()
     oup.close()

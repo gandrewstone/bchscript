@@ -1,10 +1,12 @@
 import pdb
 import sys
+import traceback
 from binascii import hexlify, unhexlify
 import hashlib
 import bchscript.bchopcodes as bchopcodes
 import bchscript.cashaddrutil as cashaddrutil
 import bchscript.errors as err
+import bchscript.config as config
 
 if not "BCH_ADDRESS_PREFIX" in globals():  # don't initialize twice
     BCH_ADDRESS_PREFIX = None
@@ -13,6 +15,37 @@ BCH_TESTNET = "bchtest:"
 BCH_MAINNET = "bitcoincash:"
 BCH_REGTEST = "bchreg:"
 BCH_ANYNET = None
+
+def excepthook(type, value, tb):
+    if config.SHOW_COMPILER_EXCEPTIONS:
+        print("\n'" + type.__name__ + "' Exception Raised:")
+        # printed by print_exception: print(str(value))
+        traceback.print_exception(type, value, tb)
+        pdb.pm()
+    else:
+        print(str(value))
+
+sys.excepthook = excepthook
+
+
+class TokenChunk(str):
+    """A parsed chunk of input program, annotated with its location in the source"""
+    def __new__(cls, s, filename, line, pos):  # Must use new because str is constant once created
+        obj = str.__new__(cls,s)
+        obj.line = line
+        obj.pos = pos
+        obj.filename = filename
+        obj.fn = None
+        return obj
+    def __str__(self):
+        return str.__str__(self)
+    def __repr__(self):
+        # This reproduces how emacs represents errors in c compilation
+        return  self.filename + ":" + str(self.line) + ":" + str(self.pos) + ":" + str.__repr__(self)
+    def locationEmacspy(self, errString):
+        """This reproduces how emacs python represents errors.  The errString is a formatted string; use the format specifier "token" to get this token text, and "line" and "pos"."""
+        function = sefl.fn if self.fn else "_"
+        return "> " + self.filename + "(" + str(self.line) + ")" + function + "()\n-> " + errString.format(token=str(self), line=self.line, pos=self.pos)
 
 
 def ScriptifyData(tmp):
@@ -137,7 +170,7 @@ def script2bin(opcodes, showSatisfierItems=True, showTemplateItems=True):
     ret = []
     for opcode in opcodes:
         s = None
-        if type(opcode) is str:
+        if isinstance(opcode, str):
             if opcode[0] == "@":  # its an existing stack arg, so no-op
                 s = opcode
             elif opcode[0] == "$":  # its an existing stack arg, so no-op
@@ -157,7 +190,7 @@ def script2bin(opcodes, showSatisfierItems=True, showTemplateItems=True):
         else:
             assert 0, "Not fully compiled: %s" % opcode
 
-        if type(s) is str:
+        if isinstance(s, str):
             if s[0] == "@":  # its an existing stack arg, so no-op
                 if showSatisfierItems:
                     ret.append(s)
@@ -173,12 +206,12 @@ def script2bin(opcodes, showSatisfierItems=True, showTemplateItems=True):
     return templatedJoin(ret)
 
 
-def script2hex(opcodes):
+def script2hex(opcodes, showSatisfierItems=False, templateItems=None):
     """Convert a program to a hex string suitable for RPC"""
     ret = []
     tobytes = []
     for phrases in opcodes:
-        for bins in script2bin(phrases):
+        for bins in script2bin(phrases,showSatisfierItems):
             if type(bins) is int:
                 tobytes.append(bins)
             else:
@@ -190,7 +223,10 @@ def script2hex(opcodes):
                     if bins != b"":
                         ret.append(hexlify(bins).decode("utf-8"))
                 elif isinstance(bins, str):
-                    ret.append(bins)  # Its a template parameter
+                    if templateItems is None:
+                        ret.append(bins)  # Its a template parameter
+                    else: # To a template substitution
+                        ret.append(templateItems[bins])
                 elif type(bins) is int:
                     tobytes.append(bins)
     # Any final bytes to convert to hex?
@@ -325,9 +361,11 @@ def anything2bytes(msg):
     return msg
 
 def reportBadStatement(tokens, n, symbols, printIt=True):
-    s = "ERROR: Bad statement or undefined symbol: %s\n" % tokens[n]
-    s+= "    Known symbols: %s\n" % list(filter(lambda x: type(x) is str, symbols.keys()))
-    s+= "    Context: %s\n" % tokens[n-10:n+10]
+    s = "ERROR: Bad statement or undefined symbol '{token}' at offset {pos}"
+    s+= "\n    Known symbols: %s\n" % list(filter(lambda x: type(x) is str, symbols.keys()))
+    # s+= "    Context: %s\n" % tokens[n-10:n+10]
+    if isinstance(tokens[n], TokenChunk):
+        s = "\n" + tokens[n].locationEmacspy(s)
     if printIt: print(s)
     return s
 

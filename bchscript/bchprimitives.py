@@ -6,9 +6,21 @@ from bchscript.bchutil import *
 
 statementConsumerCallout = None
 
+
 class TemplateParam():
     def __init__(self, name):
-        self.name = name
+        if type(name) is TokenChunk:
+            self.name = str(name)
+            self.filename = name.filename
+            self.line = name.line
+            self.pos = name.pos
+        else:
+            self.name = name
+            self.line = None
+            self.pos = None
+            self.filename = None
+        if self.name[0] == "$":  # strip off the template indicator
+            self.name = self.name[1:]
     def compile(self, symbols=None):
         """Compile into a list of statements, given an input substitution (symbol) table"""
         return [self]  # Template params pass thru compilation
@@ -40,6 +52,8 @@ def compileParamsList(params, symbols):
             ret.append(s)
         elif type(s) is str:
             ret.append(s)
+        elif type(s) is TokenChunk:
+            ret.append(s)
         else:
             temp = s.compile(symbols)
             if type(temp) == list:
@@ -50,6 +64,9 @@ def compileParamsList(params, symbols):
 
 
 def isInt(obj):
+    if type(obj) is TokenChunk:
+        obj = str(obj)
+
     try:
         i = int(obj)  # Push a number onto the stack
         return True
@@ -81,23 +98,23 @@ def argsConsumer(tokens, n, validSymbols):
     n += 1
     while tokens[n] != ")":
         if isInt(tokens[n]):
-            arg.append(int(tokens[n]))
+            arg.append(tokens[n])
             n += 1
-        elif tokens[n][0] == '$':
-            arg.append(TemplateParam(tokens[n][1:]))
+        elif str(tokens[n])[0] == '$':
+            arg.append(TemplateParam(tokens[n]))
             n += 1
-        elif tokens[n][0] == '"':  # Push data onto the stack
+        elif str(tokens[n])[0] == '"':  # Push data onto the stack
             arg.append(tokens[n])
             n += 1
         elif tokens[n] in validSymbols:
-            (n, obj) = validSymbols[tokens[n]].parse(tokens, n + 1, validSymbols)
+            (n, obj) = validSymbols[str(tokens[n])].parse(tokens, n + 1, validSymbols)
             arg.append(obj)
         else:
-            if tokens[n] == ")":
+            if str(tokens[n]) == ")":
                 continue
             # pdb.set_trace()
             raise Exception("invalid symbol: %s" % tokens[n])
-        if tokens[n] == ",":
+        if str(tokens[n]) == ",":
             if len(arg) > 1:
                 args.append(arg)
             else:
@@ -175,6 +192,7 @@ class SpendScriptItem:
             self.val = val.strip("'").strip('"')
         else:
             self.val = val
+        self.pushedOntoSatisfier = False
 
     def serialize(self):
         if not self.val is None:
@@ -199,7 +217,7 @@ class ResultData:
         self.opcode = opcode
         self.args = args # portion of the main stack that this opcode uses
         self.altArgs = altArgs # portion of the alt stack that this opcode uses
-    
+
 class Param:
     """
     """
@@ -219,7 +237,7 @@ class Param:
             assert not "parameter %s is not bound" % self.name
         if type(binding) is list:  # Already compiled
             return binding
-        if type(binding) is str:   # primitive
+        if isinstance(binding,str):   # primitive
             return [binding]
         elif type(binding) is int:  # primitive
             return [binding]
@@ -278,7 +296,6 @@ class Primitive:
         """Returns ((consumed, produced), (altConsumed, altProduced)), which describes how this operation affects the stacks.  Does not modify stack or altstack"""
         ## TODO handle many weird cases
         return ((self.stackConsumption, self.stackProduction), (0,0))
-        
 
     def parse(self, tokens, n, symbols=None):
         """
@@ -351,11 +368,11 @@ class RepeatConstruct:
         assert(0)  # should never call this because compile causes this to disappear
 
 
-class IfConstruct:
+class IfConstruct(Primitive):
     """Implement the if () {} construct"""
 
     def __init__(self):
-        self.name = "OP_IF"
+        Primitive.__init__(self, "OP_IF", bchopcodes.opcode2bin("OP_IF"), 1, 0, simFn=None, parserFn=None)
         self.statements = None
         self.arg = None
         self.outputs = None

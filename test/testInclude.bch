@@ -1,3 +1,15 @@
-include "test/stdscripts.bch"
+include "stdscripts.bch"
 
-scriptify!("main",p2pkh("bitcoincash:any address here"))
+def test(addr,@which)
+{
+  if (@which)
+  {
+  p2pkh(addr)
+  }
+  else
+  {
+  }
+}
+
+//scriptify!("main",test(bitcoincash:qq9wwnuw4eukyh5g34ckg5vk4aaxnvr04vkspyv850))
+scriptify!("main",test($addr))
